@@ -78,52 +78,52 @@ func main() {
 	}
 	defer cfgManager.Close()
 
-	// 初始化会话管理器（Responses API 专用）
-	var redisStore *session.RedisStore
-	if envCfg.SessionStorageMode == "redis" {
-		var err error
-		redisStore, err = session.NewRedisStore(
-			envCfg.RedisAddr,
-			envCfg.RedisPassword,
-			envCfg.RedisDB,
-			time.Duration(envCfg.SessionTTL)*time.Second,
-		)
-		if err != nil {
-			log.Printf("[Session-Init] 警告: Redis 连接失败: %v，回退到内存模式", err)
-			redisStore = nil
-		} else {
-			log.Printf("[Session-Init] Redis 存储已初始化: %s (DB %d, TTL: %ds)",
-				envCfg.RedisAddr, envCfg.RedisDB, envCfg.SessionTTL)
-		}
-	}
+	// 初始化统一 PostgreSQL 存储（metrics + sessions）
+	var metricsStore metrics.PersistenceStore
+	var pgSessionStore *session.PGSessionStore
 
-	sessionManager := session.NewSessionManagerWithRedis(
-		24*time.Hour, // 24小时过期
-		100,          // 最多100条消息
-		100000,       // 最多100k tokens
-		redisStore,
-	)
-	storageMode := "memory"
-	if redisStore != nil {
-		storageMode = "redis"
-	}
-	log.Printf("[Session-Init] 会话管理器已初始化 (存储模式: %s)", storageMode)
-
-	// 初始化指标持久化存储（可选）
-	var metricsStore *metrics.SQLiteStore
-	if envCfg.MetricsPersistenceEnabled {
+	if envCfg.DatabaseURL != "" {
 		var err error
-		metricsStore, err = metrics.NewSQLiteStore(&metrics.SQLiteStoreConfig{
-			DBPath:        ".config/metrics.db",
+		// 先创建 metrics store（包含 schema 创建）
+		metricsStore, err = metrics.NewPostgresStore(&metrics.PostgresStoreConfig{
+			DatabaseURL:   envCfg.DatabaseURL,
 			RetentionDays: envCfg.MetricsRetentionDays,
 		})
 		if err != nil {
-			log.Printf("[Metrics-Init] 警告: 初始化指标持久化存储失败: %v，将使用纯内存模式", err)
+			log.Printf("[Metrics-Init] 警告: PG metrics 初始化失败: %v，回退到内存模式", err)
 			metricsStore = nil
+		} else {
+			log.Printf("[Metrics-Postgres] 指标存储已初始化 (保留 %d 天)", envCfg.MetricsRetentionDays)
+		}
+
+		// 再创建 session store（复用同一 DSN）
+		if metricsStore != nil {
+			pgSessionStore, err = session.NewPGSessionStore(
+				envCfg.DatabaseURL,
+				time.Duration(envCfg.SessionTTL)*time.Second,
+			)
+			if err != nil {
+				log.Printf("[Session-Init] 警告: PG session 初始化失败: %v，回退到内存模式", err)
+				pgSessionStore = nil
+			} else {
+				log.Printf("[Session-Init] PG 会话存储已初始化")
+			}
 		}
 	} else {
-		log.Printf("[Metrics-Init] 指标持久化已禁用，使用纯内存模式")
+		log.Printf("[Metrics-Init] 未配置 DATABASE_URL，使用纯内存模式")
 	}
+
+	sessionManager := session.NewSessionManagerWithPG(
+		24*time.Hour, // 24小时过期
+		100,          // 最多100条消息
+		100000,       // 最多100k tokens
+		pgSessionStore,
+	)
+	storageMode := "memory"
+	if pgSessionStore != nil {
+		storageMode = "pg"
+	}
+	log.Printf("[Session-Init] 会话管理器已初始化 (存储模式: %s)", storageMode)
 
 	// 初始化多渠道调度器（Messages、Responses、Gemini、Chat 和 Images 使用独立的指标管理器）
 	var messagesMetricsManager, responsesMetricsManager, geminiMetricsManager, chatMetricsManager, imagesMetricsManager *metrics.MetricsManager
@@ -600,6 +600,9 @@ func main() {
 			log.Println("[Server-Shutdown] 服务器已安全关闭")
 		}
 
+		// 关闭会话管理器（释放 PG 连接）
+		sessionManager.Close()
+
 		// 关闭指标持久化存储
 		if metricsStore != nil {
 			if err := metricsStore.Close(); err != nil {
@@ -608,9 +611,6 @@ func main() {
 				log.Println("[Metrics-Shutdown] 指标存储已安全关闭")
 			}
 		}
-
-		// 关闭会话管理器（释放 Redis 连接）
-		sessionManager.Close()
 
 		close(scheduledRecoveryStop)
 		close(shutdownDone)

@@ -29,8 +29,9 @@ type EnvConfig struct {
 	MetricsWindowSize       int     // 滑动窗口大小
 	MetricsFailureThreshold float64 // 失败率阈值
 	// 指标持久化配置
-	MetricsPersistenceEnabled bool // 是否启用 SQLite 持久化
-	MetricsRetentionDays      int  // 数据保留天数（3-30）
+	MetricsRetentionDays int // 数据保留天数（3-30）
+	// 数据库配置
+	DatabaseURL string // PostgreSQL 连接字符串
 	// HTTP 客户端配置
 	ResponseHeaderTimeout int // 等待响应头超时时间（秒）
 	// 日志文件相关配置
@@ -42,11 +43,7 @@ type EnvConfig struct {
 	LogCompress   bool // 是否压缩旧日志文件
 	LogToConsole  bool // 是否同时输出到控制台
 	// 会话存储配置
-	SessionStorageMode string // "memory" 或 "redis"
-	RedisAddr          string // Redis 地址
-	RedisPassword      string // Redis 密码
-	RedisDB            int    // Redis DB
-	SessionTTL         int    // 会话 TTL（秒）
+	SessionTTL int // 会话过期时间（秒），用于内存清理
 }
 
 // NewEnvConfig 创建环境配置
@@ -81,8 +78,9 @@ func NewEnvConfig() *EnvConfig {
 		MetricsWindowSize:       getEnvAsInt("METRICS_WINDOW_SIZE", 10),
 		MetricsFailureThreshold: getEnvAsFloat("METRICS_FAILURE_THRESHOLD", 0.5),
 		// 指标持久化配置
-		MetricsPersistenceEnabled: getEnv("METRICS_PERSISTENCE_ENABLED", "true") != "false",
-		MetricsRetentionDays:      clampInt(getEnvAsInt("METRICS_RETENTION_DAYS", 30), 3, 90),
+		MetricsRetentionDays: clampInt(getEnvAsInt("METRICS_RETENTION_DAYS", 30), 3, 90),
+		// 数据库配置
+		DatabaseURL: getEnv("DATABASE_URL", ""),
 		// HTTP 客户端配置
 		ResponseHeaderTimeout: clampInt(getEnvAsInt("RESPONSE_HEADER_TIMEOUT", 60), 30, 120), // 30-120 秒
 		// 日志文件配置
@@ -94,11 +92,7 @@ func NewEnvConfig() *EnvConfig {
 		LogCompress:   getEnv("LOG_COMPRESS", "true") != "false",
 		LogToConsole:  getEnv("LOG_TO_CONSOLE", "true") != "false",
 		// 会话存储配置
-		SessionStorageMode: getEnv("SESSION_STORAGE", "memory"),
-		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
-		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
-		RedisDB:            getEnvAsInt("REDIS_DB", 0),
-		SessionTTL:         getEnvAsInt("SESSION_TTL", 86400),
+		SessionTTL: getEnvAsInt("SESSION_TTL", 86400),
 	}
 }
 

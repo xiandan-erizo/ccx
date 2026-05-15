@@ -34,24 +34,24 @@ type SessionManager struct {
 	maxMessages int           // 100条
 	maxTokens   int           // 100k
 
-	// Redis 存储（nil = 纯内存模式）
-	redisStore *RedisStore
+	// PG 持久化存储（nil = 纯内存模式）
+	pgStore *PGSessionStore
 }
 
 // NewSessionManager 创建会话管理器
 func NewSessionManager(maxAge time.Duration, maxMessages int, maxTokens int) *SessionManager {
-	return NewSessionManagerWithRedis(maxAge, maxMessages, maxTokens, nil)
+	return NewSessionManagerWithPG(maxAge, maxMessages, maxTokens, nil)
 }
 
-// NewSessionManagerWithRedis 创建带 Redis 支持的会话管理器
-func NewSessionManagerWithRedis(maxAge time.Duration, maxMessages int, maxTokens int, redisStore *RedisStore) *SessionManager {
+// NewSessionManagerWithPG 创建带 PG 持久化支持的会话管理器
+func NewSessionManagerWithPG(maxAge time.Duration, maxMessages int, maxTokens int, pgStore *PGSessionStore) *SessionManager {
 	sm := &SessionManager{
 		sessions:        make(map[string]*Session),
 		responseMapping: make(map[string]string),
 		maxAge:          maxAge,
 		maxMessages:     maxMessages,
 		maxTokens:       maxTokens,
-		redisStore:      redisStore,
+		pgStore:         pgStore,
 	}
 
 	// 启动定期清理
@@ -74,16 +74,16 @@ func (sm *SessionManager) GetOrCreateSession(previousResponseID string) (*Sessio
 			}
 		}
 
-		// 内存未命中 → 尝试从 Redis lazy load
-		if sm.redisStore != nil {
-			sess, err := sm.loadSessionFromRedis(previousResponseID)
+		// 内存未命中 → 尝试从 PG lazy load
+		if sm.pgStore != nil {
+			sess, err := sm.loadSessionFromPG(previousResponseID)
 			if err != nil {
-				log.Printf("[Session-Redis] 从 Redis 加载会话失败: %v", err)
+				log.Printf("[Session-PG] 从 PG 加载会话失败: %v", err)
 			} else if sess != nil {
 				// 加载成功，写入内存缓存
 				sm.sessions[sess.ID] = sess
 				sess.LastAccessAt = time.Now()
-				log.Printf("[Session-Redis] 从 Redis 加载会话成功: %s", sess.ID)
+				log.Printf("[Session-PG] 从 PG 加载会话成功: %s", sess.ID)
 				return sess, nil
 			}
 		}
@@ -105,9 +105,9 @@ func (sm *SessionManager) GetOrCreateSession(previousResponseID string) (*Sessio
 	sm.sessions[sessionID] = session
 	log.Printf("[Session-Create] 创建新会话: %s", sessionID)
 
-	// 异步写入 Redis
-	if sm.redisStore != nil {
-		sm.redisStore.SaveSessionAsync(session)
+	// 异步写入 PG
+	if sm.pgStore != nil {
+		sm.pgStore.SaveSessionAsync(session)
 	}
 
 	return session, nil
@@ -121,8 +121,8 @@ func (sm *SessionManager) RecordResponseMapping(responseID, sessionID string) {
 	sm.responseMapping[responseID] = sessionID
 	log.Printf("[Session-Mapping] 记录映射: %s -> %s", responseID, sessionID)
 
-	if sm.redisStore != nil {
-		sm.redisStore.RecordResponseMappingAsync(responseID, sessionID)
+	if sm.pgStore != nil {
+		sm.pgStore.RecordResponseMappingAsync(responseID, sessionID)
 	}
 }
 
@@ -140,8 +140,8 @@ func (sm *SessionManager) AppendMessage(sessionID string, item types.ResponsesIt
 	session.TotalTokens += tokensUsed
 	session.LastAccessAt = time.Now()
 
-	if sm.redisStore != nil {
-		sm.redisStore.SaveSessionAsync(session)
+	if sm.pgStore != nil {
+		sm.pgStore.SaveSessionAsync(session)
 	}
 
 	return nil
@@ -159,8 +159,8 @@ func (sm *SessionManager) UpdateLastResponseID(sessionID, responseID string) err
 
 	session.LastResponseID = responseID
 
-	if sm.redisStore != nil {
-		sm.redisStore.SaveSessionAsync(session)
+	if sm.pgStore != nil {
+		sm.pgStore.SaveSessionAsync(session)
 	}
 
 	return nil
@@ -264,10 +264,10 @@ func (sm *SessionManager) cleanup() {
 		log.Printf("[Session-Stats] 当前活跃会话: %d 个, 映射: %d 个", len(sm.sessions), len(sm.responseMapping))
 	}
 
-	// Redis 模式：清理超限的会话（Redis TTL 已处理时间过期）
-	if sm.redisStore != nil {
-		sm.cleanupRedisSessions()
-		sm.cleanupRedisOrphanedMappings()
+	// PG 模式：清理过期会话和孤立映射
+	if sm.pgStore != nil {
+		sm.cleanupPGSessions()
+		sm.cleanupPGOrphanedMappings()
 	}
 }
 
@@ -292,13 +292,13 @@ func generateID(prefix string) string {
 	return fmt.Sprintf("%s_%s", prefix, hex.EncodeToString(bytes))
 }
 
-// loadSessionFromRedis 通过 responseID 从 Redis 加载会话
-func (sm *SessionManager) loadSessionFromRedis(previousResponseID string) (*Session, error) {
+// loadSessionFromPG 通过 responseID 从 PG 加载会话
+func (sm *SessionManager) loadSessionFromPG(previousResponseID string) (*Session, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// 通过 responseID 查找 sessionID
-	sessionID, err := sm.redisStore.LookupSessionByResponseID(ctx, previousResponseID)
+	sessionID, err := sm.pgStore.LookupSessionByResponseID(ctx, previousResponseID)
 	if err != nil {
 		return nil, fmt.Errorf("lookup response mapping: %w", err)
 	}
@@ -307,71 +307,39 @@ func (sm *SessionManager) loadSessionFromRedis(previousResponseID string) (*Sess
 	}
 
 	// 加载会话数据
-	sess, err := sm.redisStore.LoadSession(ctx, sessionID)
+	sess, err := sm.pgStore.LoadSession(ctx, sessionID)
 	if err != nil {
 		return nil, fmt.Errorf("load session: %w", err)
 	}
 	return sess, nil
 }
 
-// cleanupRedisSessions 清理 Redis 中超限的会话
-func (sm *SessionManager) cleanupRedisSessions() {
+// cleanupPGSessions 清理 PG 中过期的会话
+func (sm *SessionManager) cleanupPGSessions() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	ids, err := sm.redisStore.GetAllSessionIDs(ctx)
+	removed, err := sm.pgStore.CleanupExpiredSessions(ctx, sm.maxAge, sm.maxMessages, sm.maxTokens)
 	if err != nil {
-		log.Printf("[Session-Cleanup] 获取 Redis 会话列表失败: %v", err)
-		return
-	}
-
-	removed := 0
-	for _, id := range ids {
-		sess, err := sm.redisStore.LoadSession(ctx, id)
-		if err != nil || sess == nil {
-			sm.redisStore.DeleteSession(ctx, id)
-			removed++
-			continue
-		}
-		if len(sess.Messages) > sm.maxMessages || sess.TotalTokens > sm.maxTokens {
-			sm.redisStore.DeleteSession(ctx, id)
-			removed++
-		}
-	}
-
-	if removed > 0 {
-		log.Printf("[Session-Cleanup] Redis 清理: 删除 %d 个超限会话", removed)
+		log.Printf("[Session-Cleanup] PG 清理过期会话失败: %v", err)
+	} else if removed > 0 {
+		log.Printf("[Session-Cleanup] PG 清理: 删除 %d 个过期会话", removed)
 	}
 }
 
-// cleanupRedisOrphanedMappings 清理 Redis 中指向不存在会话的映射
-func (sm *SessionManager) cleanupRedisOrphanedMappings() {
+// cleanupPGOrphanedMappings 清理 PG 中指向不存在会话的映射
+func (sm *SessionManager) cleanupPGOrphanedMappings() {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// 收集内存中的有效 sessionID
-	validIDs := make(map[string]struct{})
-	for id := range sm.sessions {
-		validIDs[id] = struct{}{}
-	}
-	// 加上 Redis 中的 sessionID
-	ids, err := sm.redisStore.GetAllSessionIDs(ctx)
-	if err == nil {
-		for _, id := range ids {
-			validIDs[id] = struct{}{}
-		}
-	}
-
-	if err := sm.redisStore.CleanOrphanedMappings(ctx, validIDs); err != nil {
-		log.Printf("[Session-Cleanup] 清理 Redis 孤立映射失败: %v", err)
+	if err := sm.pgStore.CleanOrphanedMappings(ctx); err != nil {
+		log.Printf("[Session-Cleanup] 清理 PG 孤立映射失败: %v", err)
 	}
 }
 
-// Close 关闭 SessionManager（释放 Redis 连接）
+// Close 关闭 SessionManager（释放 PG 连接）
 func (sm *SessionManager) Close() {
-	if sm.redisStore != nil {
-		if err := sm.redisStore.Close(); err != nil {
-			log.Printf("[Session-Shutdown] 警告: Redis 连接关闭失败: %v", err)
-		}
+	if sm.pgStore != nil {
+		sm.pgStore.Close()
 	}
 }

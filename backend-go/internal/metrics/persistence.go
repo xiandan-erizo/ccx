@@ -2,6 +2,8 @@ package metrics
 
 import (
 	"time"
+
+	"github.com/BenedictKing/ccx/internal/config"
 )
 
 // PersistenceStore 持久化存储接口
@@ -35,6 +37,9 @@ type PersistenceStore interface {
 
 	// DeleteCircuitStatesByMetricsKeys 按 metrics_key 和 api_type 批量删除熔断状态
 	DeleteCircuitStatesByMetricsKeys(metricsKeys []string, apiType string) (int64, error)
+
+	// MigrateMetricsKeysToIdentity 迁移 metrics key 格式（v2 -> v3）
+	MigrateMetricsKeysToIdentity(cfg config.Config) error
 
 	// Close 关闭存储（会先刷新缓冲区）
 	Close() error
@@ -77,4 +82,15 @@ type PersistentRecord struct {
 	CacheReadTokens     int64        // 缓存读取 Token
 	Model               string       // 请求模型
 	APIType             string       // "messages"、"responses"、"gemini" 或 "chat"
+}
+
+// AggregatedBucket 聚合时间桶
+type AggregatedBucket struct {
+	Timestamp           time.Time
+	TotalRequests       int64
+	SuccessCount        int64
+	InputTokens         int64
+	OutputTokens        int64
+	CacheCreationTokens int64
+	CacheReadTokens     int64
 }

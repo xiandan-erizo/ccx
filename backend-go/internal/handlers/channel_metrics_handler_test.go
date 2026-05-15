@@ -45,6 +45,9 @@ func (f *fakePersistenceStore) DeleteCircuitStatesByMetricsKeys(metricsKeys []st
 	return 0, nil
 }
 func (f *fakePersistenceStore) Close() error { return nil }
+func (f *fakePersistenceStore) MigrateMetricsKeysToIdentity(cfg config.Config) error {
+	return nil
+}
 
 func TestFilterBucketsByURLsIncludesEquivalentLegacyMetricsKeys(t *testing.T) {
 	baseURL := "https://shared.example.com"
