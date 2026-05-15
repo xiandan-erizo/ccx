@@ -1,18 +1,18 @@
 services:
   # CCX API 代理服务 (一体化架构: 后端 + 前端界面)
   ccx:
-    image: crpi-i19l8zl0ugidq97v.cn-hangzhou.personal.cr.aliyuncs.com/bene/ccx:latest
+    # image: crpi-i19l8zl0ugidq97v.cn-hangzhou.personal.cr.aliyuncs.com/bene/ccx:latest
     # 本地构建使用以下配置（注释掉 image 行）:
-    # build:
-    #   context: .
-    #   dockerfile: Dockerfile
-    #   # 中国网络使用:
-    #   # dockerfile: Dockerfile_China
-    #   target: runtime
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # 中国网络使用:
+      # dockerfile: Dockerfile_China
+      target: runtime
     container_name: ccx
     ports:
       # 统一端口：前端界面 + API + 管理接口
-      - '3000:3000'
+      - '3002:3000'
     volumes:
       # 配置目录持久化
       - ./.config:/app/.config
@@ -20,16 +20,18 @@ services:
       - ./logs:/app/logs
     environment:
       # 基础配置
-      - ENV=production
+      - ENV=development
       # 是否启用Web管理界面 (true=一体化模式, false=纯API模式)
       - ENABLE_WEB_UI=true
       # 代理访问密钥 - 用于验证客户端对代理服务器的访问权限
-      - PROXY_ACCESS_KEY=your-proxy-access-key
+      - PROXY_ACCESS_KEY=${PROXY_ACCESS_KEY:-your-proxy-access-key}
       # 管理 API 独立密钥（可选，未设置时回退到 PROXY_ACCESS_KEY）
       # 设置后，Web 管理界面和 /api/* 端点将使用此密钥认证，与代理密钥隔离
-      # - ADMIN_ACCESS_KEY=your-admin-secret-key
+      - PORT=3000
       # 日志级别 (error, warn, info, debug)
       - LOG_LEVEL=warn
+      # 上游首个响应头等待时间；长推理模型非流式请求可能超过默认 60 秒
+      - RESPONSE_HEADER_TIMEOUT=120
       # 是否启用请求日志
       - ENABLE_REQUEST_LOGS=false
       # 是否启用响应日志

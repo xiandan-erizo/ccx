@@ -460,10 +460,12 @@ func main() {
 
 	// 代理端点 - Responses API
 	responsesHandler := responses.Handler(envCfg, cfgManager, sessionManager, channelScheduler)
+	r.POST("/responses", responsesHandler)
 	r.POST("/v1/responses", responsesHandler)
 	r.POST("/:routePrefix/v1/responses", responsesHandler)
 
 	compactHandler := responses.CompactHandler(envCfg, cfgManager, sessionManager, channelScheduler)
+	r.POST("/responses/compact", responsesHandler)
 	r.POST("/v1/responses/compact", compactHandler)
 	r.POST("/:routePrefix/v1/responses/compact", compactHandler)
 
