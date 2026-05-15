@@ -41,6 +41,12 @@ type EnvConfig struct {
 	LogMaxAge     int  // 保留的旧日志文件最大天数
 	LogCompress   bool // 是否压缩旧日志文件
 	LogToConsole  bool // 是否同时输出到控制台
+	// 会话存储配置
+	SessionStorageMode string // "memory" 或 "redis"
+	RedisAddr          string // Redis 地址
+	RedisPassword      string // Redis 密码
+	RedisDB            int    // Redis DB
+	SessionTTL         int    // 会话 TTL（秒）
 }
 
 // NewEnvConfig 创建环境配置
@@ -87,6 +93,12 @@ func NewEnvConfig() *EnvConfig {
 		LogMaxAge:     getEnvAsInt("LOG_MAX_AGE", 30),     // 默认保留 30 天
 		LogCompress:   getEnv("LOG_COMPRESS", "true") != "false",
 		LogToConsole:  getEnv("LOG_TO_CONSOLE", "true") != "false",
+		// 会话存储配置
+		SessionStorageMode: getEnv("SESSION_STORAGE", "memory"),
+		RedisAddr:          getEnv("REDIS_ADDR", "localhost:6379"),
+		RedisPassword:      getEnv("REDIS_PASSWORD", ""),
+		RedisDB:            getEnvAsInt("REDIS_DB", 0),
+		SessionTTL:         getEnvAsInt("SESSION_TTL", 86400),
 	}
 }
 

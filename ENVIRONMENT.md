@@ -68,6 +68,13 @@ CORS_ORIGIN=*                          # CORS 允许的源
 # 熔断指标配置
 METRICS_WINDOW_SIZE=10                 # 滑动窗口大小（最小 3，默认 10）
 METRICS_FAILURE_THRESHOLD=0.5          # 失败率阈值（0-1，默认 0.5 即 50%）
+
+# 会话存储配置
+SESSION_STORAGE=memory                 # 会话存储模式: memory（纯内存）或 redis
+REDIS_ADDR=localhost:6379              # Redis 服务器地址（SESSION_STORAGE=redis 时生效）
+REDIS_PASSWORD=                        # Redis 密码（可选）
+REDIS_DB=0                             # Redis 数据库编号
+SESSION_TTL=86400                      # 会话过期时间（秒），默认 24 小时
 ```
 
 #### 日志等级说明
@@ -439,6 +446,31 @@ ENABLE_WEB_UI=true
 - ✅ 适合：本地开发和调试
 - ✅ 特点：输出所有详细信息，包括请求体、响应体
 - ⚠️ 警告：包含敏感信息，仅限开发环境使用
+
+### 场景5：使用 Redis 持久化会话（多实例部署）
+```env
+# backend-go/.env
+ENV=production
+PORT=3000
+PROXY_ACCESS_KEY=$(openssl rand -base64 32)
+
+# 启用 Redis 会话存储
+SESSION_STORAGE=redis
+REDIS_ADDR=redis-host:6379
+REDIS_PASSWORD=your-redis-password
+REDIS_DB=0
+SESSION_TTL=86400
+
+# 标准日志
+LOG_LEVEL=info
+ENABLE_REQUEST_LOGS=true
+ENABLE_RESPONSE_LOGS=false
+
+ENABLE_WEB_UI=true
+```
+- ✅ 适合：多实例/容器化部署，需要跨实例共享会话
+- ✅ 特点：进程重启后可通过 `previous_response_id` 恢复会话
+- ⚠️ 注意：Redis 连接失败时自动回退到内存模式
 
 ## 调试配置
 

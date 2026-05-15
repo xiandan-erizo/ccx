@@ -79,12 +79,35 @@ func main() {
 	defer cfgManager.Close()
 
 	// 初始化会话管理器（Responses API 专用）
-	sessionManager := session.NewSessionManager(
+	var redisStore *session.RedisStore
+	if envCfg.SessionStorageMode == "redis" {
+		var err error
+		redisStore, err = session.NewRedisStore(
+			envCfg.RedisAddr,
+			envCfg.RedisPassword,
+			envCfg.RedisDB,
+			time.Duration(envCfg.SessionTTL)*time.Second,
+		)
+		if err != nil {
+			log.Printf("[Session-Init] 警告: Redis 连接失败: %v，回退到内存模式", err)
+			redisStore = nil
+		} else {
+			log.Printf("[Session-Init] Redis 存储已初始化: %s (DB %d, TTL: %ds)",
+				envCfg.RedisAddr, envCfg.RedisDB, envCfg.SessionTTL)
+		}
+	}
+
+	sessionManager := session.NewSessionManagerWithRedis(
 		24*time.Hour, // 24小时过期
 		100,          // 最多100条消息
 		100000,       // 最多100k tokens
+		redisStore,
 	)
-	log.Printf("[Session-Init] 会话管理器已初始化")
+	storageMode := "memory"
+	if redisStore != nil {
+		storageMode = "redis"
+	}
+	log.Printf("[Session-Init] 会话管理器已初始化 (存储模式: %s)", storageMode)
 
 	// 初始化指标持久化存储（可选）
 	var metricsStore *metrics.SQLiteStore
@@ -585,6 +608,9 @@ func main() {
 				log.Println("[Metrics-Shutdown] 指标存储已安全关闭")
 			}
 		}
+
+		// 关闭会话管理器（释放 Redis 连接）
+		sessionManager.Close()
 
 		close(scheduledRecoveryStop)
 		close(shutdownDone)
