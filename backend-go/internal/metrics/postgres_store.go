@@ -607,7 +607,7 @@ func (s *PostgresStore) LoadLatestTimestamps(apiType string) (map[string]*KeyLat
 			MAX(CASE WHEN success = FALSE THEN timestamp END) AS last_failure
 		FROM request_records
 		WHERE api_type = $1
-		GROUP BY metrics_key
+		GROUP BY metrics_key, base_url, key_mask
 	`, apiType)
 	if err != nil {
 		return nil, err
