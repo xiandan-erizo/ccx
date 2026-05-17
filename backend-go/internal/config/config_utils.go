@@ -357,6 +357,10 @@ func matchSupportedModelPattern(pattern, model string) bool {
 	if strings.HasPrefix(pattern, "!") {
 		pattern = strings.TrimSpace(strings.TrimPrefix(pattern, "!"))
 	}
+	// 忽略大小写，使用小写进行比较
+	pattern = strings.ToLower(pattern)
+	model = strings.ToLower(model)
+
 	if pattern == "*" {
 		return true
 	}

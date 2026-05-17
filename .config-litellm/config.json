@@ -1,0 +1,94 @@
+{
+  "upstream": null,
+  "responsesUpstream": [
+    {
+      "baseUrl": "https://token-plan-cn.xiaomimimo.com",
+      "apiKeys": [
+        "tp-c98k4gzm5negvy6mv5fidomh6ffgr9hmei70qwhceczuprjr"
+      ],
+      "serviceType": "openai",
+      "name": "小米 Responses via Chat",
+      "website": "https://platform.xiaomimimo.com",
+      "modelMapping": {
+        "gpt-5.4": "mimo-v2.5",
+        "gpt-5.5": "mimo-v2.5-pro"
+      },
+      "reasoningMapping": {
+        "gpt-5.4": "none",
+        "gpt-5.5": "xhigh"
+      },
+      "reasoningParamStyle": "reasoning",
+      "codexNativeToolPassthrough": true,
+      "codexToolCompat": true,
+      "stripCodexClientTools": true,
+      "priority": 0,
+      "status": "active",
+      "autoBlacklistBalance": true,
+      "normalizeMetadataUserId": true,
+      "supportedModels": [
+        "GPT-*",
+        "mimo-*"
+      ]
+    },
+    {
+      "baseUrl": "https://coding.dashscope.aliyuncs.com",
+      "apiKeys": [
+        "sk-sp-421dd055d18348beae0d125d22d2e56e"
+      ],
+      "serviceType": "openai",
+      "name": "百炼",
+      "website": "https://bailian.console.aliyun.com/",
+      "modelMapping": {
+        "gpt-5": "qwen3.6-plus",
+        "gpt-5.4": "qwen3.6-plus"
+      },
+      "reasoningParamStyle": "reasoning",
+      "textVerbosity": "medium",
+      "fastMode": true,
+      "normalizeNonstandardChatRoles": true,
+      "codexNativeToolPassthrough": true,
+      "codexToolCompat": true,
+      "stripCodexClientTools": true,
+      "priority": 0,
+      "status": "active",
+      "autoBlacklistBalance": true,
+      "normalizeMetadataUserId": true,
+      "supportedModels": [
+        "qwen3*",
+        "glm-5",
+        "GPT*",
+        "kimi-*"
+      ]
+    }
+  ],
+  "geminiUpstream": null,
+  "chatUpstream": [
+    {
+      "baseUrl": "https://token-plan-cn.xiaomimimo.com",
+      "apiKeys": [
+        "tp-c98k4gzm5negvy6mv5fidomh6ffgr9hmei70qwhceczuprjr"
+      ],
+      "serviceType": "openai",
+      "name": "小米",
+      "website": "https://platform.xiaomimimo.com",
+      "modelMapping": {
+        "gpt-5.4": "mimo-v2.5-pro",
+        "gpt-5.5": "mimo-v2.5-pro"
+      },
+      "reasoningMapping": {
+        "gpt-5.5": "xhigh"
+      },
+      "reasoningParamStyle": "reasoning",
+      "codexToolCompat": false,
+      "priority": 0,
+      "status": "active",
+      "autoBlacklistBalance": true,
+      "normalizeMetadataUserId": true,
+      "supportedModels": [
+        "GPT-*"
+      ]
+    }
+  ],
+  "fuzzyModeEnabled": true,
+  "stripBillingHeader": true
+}

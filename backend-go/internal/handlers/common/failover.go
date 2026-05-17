@@ -565,6 +565,8 @@ func isNonRetryableErrorCode(code string) bool {
 	codes := []string{
 		"invalid_request",
 		"invalid_request_error",
+		"invalid_parameter",
+		"invalid_parameter_error",
 		"bad_request",
 	}
 	codeLower := strings.ToLower(code)

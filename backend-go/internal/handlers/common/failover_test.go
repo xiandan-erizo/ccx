@@ -970,6 +970,10 @@ func TestShouldRetryWithNextKey_FuzzyMode_InvalidRequestShouldNotFailover(t *tes
 			name: "anthropic thinking field required",
 			body: []byte(`{"error":{"type":"invalid_request_error","message":"messages.1213.content.0.thinking.thinking: Field required"},"type":"error"}`),
 		},
+		{
+			name: "invalid parameter error with upstream internal error prefix",
+			body: []byte(`{"error":{"code":"invalid_parameter_error","message":"<400> InternalError.Algo.InvalidParameter: Range of input length should be [1, 202745]","type":"invalid_request_error"}}`),
+		},
 	}
 
 	for _, tt := range tests {

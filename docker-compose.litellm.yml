@@ -1,0 +1,47 @@
+services:
+  ccx-litellm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    container_name: ccx-litellm
+    ports:
+      - '3003:3000'
+    volumes:
+      - ./.config-litellm:/app/.config
+      - ./logs-litellm:/app/logs
+    environment:
+      - ENV=development
+      - ENABLE_WEB_UI=true
+      - PROXY_ACCESS_KEY=${PROXY_ACCESS_KEY:-your-proxy-access-key}
+      - PORT=3000
+      - LOG_LEVEL=warn
+      - RESPONSE_HEADER_TIMEOUT=120
+      - ENABLE_REQUEST_LOGS=false
+      - ENABLE_RESPONSE_LOGS=false
+      - DATABASE_URL=${CCX_LITELLM_DATABASE_URL:?set CCX_LITELLM_DATABASE_URL in .env}
+      - METRICS_RETENTION_DAYS=30
+      - SESSION_TTL=86400
+    healthcheck:
+      test: ['CMD', 'wget', '--no-verbose', '--tries=1', '--spider', 'http://localhost:3000/health']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+          cpus: '0.5'
+        reservations:
+          memory: 64M
+          cpus: '0.25'
+    restart: unless-stopped
+    networks:
+      - default
+      - onepanel
+
+networks:
+  onepanel:
+    external: true
+    name: 1panel-network
