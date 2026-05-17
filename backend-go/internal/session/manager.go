@@ -15,7 +15,7 @@ import (
 
 // Session 会话数据结构
 type Session struct {
-	ID             string                `json:"id"`                // sess_xxxxx
+	ID             string                `json:"id"`               // sess_xxxxx
 	Messages       []types.ResponsesItem `json:"messages"`         // 完整对话历史
 	LastResponseID string                `json:"last_response_id"` // 最后一个 response ID
 	CreatedAt      time.Time             `json:"created_at"`
@@ -82,6 +82,7 @@ func (sm *SessionManager) GetOrCreateSession(previousResponseID string) (*Sessio
 			} else if sess != nil {
 				// 加载成功，写入内存缓存
 				sm.sessions[sess.ID] = sess
+				sm.responseMapping[previousResponseID] = sess.ID
 				sess.LastAccessAt = time.Now()
 				log.Printf("[Session-PG] 从 PG 加载会话成功: %s", sess.ID)
 				return sess, nil
@@ -274,19 +275,44 @@ func (sm *SessionManager) cleanup() {
 // GetSessionByResponseID 通过 responseID 只读查找 session（不创建新 session）
 func (sm *SessionManager) GetSessionByResponseID(responseID string) (*Session, error) {
 	sm.mu.RLock()
-	defer sm.mu.RUnlock()
-
 	sessionID, ok := sm.responseMapping[responseID]
-	if !ok {
+	if ok {
+		session, exists := sm.sessions[sessionID]
+		if !exists {
+			sm.mu.RUnlock()
+			return nil, fmt.Errorf("会话已过期: %s", sessionID)
+		}
+		cloned, err := cloneSession(session)
+		sm.mu.RUnlock()
+		return cloned, err
+	}
+	sm.mu.RUnlock()
+
+	if sm.pgStore == nil {
 		return nil, fmt.Errorf("未找到 responseID 对应的会话: %s", responseID)
 	}
 
-	session, exists := sm.sessions[sessionID]
-	if !exists {
-		return nil, fmt.Errorf("会话已过期: %s", sessionID)
+	sess, err := sm.loadSessionFromPG(responseID)
+	if err != nil {
+		log.Printf("[Session-PG] 通过 responseID 加载会话失败: %v", err)
+		return nil, fmt.Errorf("未找到 responseID 对应的会话: %s", responseID)
+	}
+	if sess == nil {
+		return nil, fmt.Errorf("未找到 responseID 对应的会话: %s", responseID)
 	}
 
-	return cloneSession(session)
+	sm.mu.Lock()
+	sm.sessions[sess.ID] = sess
+	sm.responseMapping[responseID] = sess.ID
+	sm.mu.Unlock()
+
+	log.Printf("[Session-PG] 通过 responseID 加载会话成功: %s", sess.ID)
+	cloned, err := cloneSession(sess)
+	if err != nil {
+		return nil, err
+	}
+
+	return cloned, nil
 }
 
 // CreateCompactedSession 创建一个压缩后的 session 并记录 responseID 映射
@@ -307,6 +333,11 @@ func (sm *SessionManager) CreateCompactedSession(responseID string, messages []t
 	sm.sessions[sessionID] = session
 	sm.responseMapping[responseID] = sessionID
 	log.Printf("[Session-Compact] 创建压缩会话: %s, responseID: %s", sessionID, responseID)
+
+	if sm.pgStore != nil {
+		sm.pgStore.SaveSessionAsync(session)
+		sm.pgStore.RecordResponseMappingAsync(responseID, sessionID)
+	}
 
 	return sessionID
 }
