@@ -57,6 +57,22 @@
   --ccx-channel-row-breaker-half-open-bg: #dbeafe;
   --ccx-channel-row-breaker-half-open-hover-bg: #bfdbfe;
   --ccx-channel-row-breaker-half-open-border: #2563eb;
+
+  /* HUD / Tech-Sense tokens */
+  --ccx-hud-corner-color: rgb(var(--v-theme-on-surface));
+  --ccx-hud-corner-size: 10px;
+  --ccx-hud-corner-width: 2px;
+  --ccx-dot-grid-color: rgba(var(--v-theme-on-surface), 0.04);
+  --ccx-dot-grid-size: 16px;
+  --ccx-led-streaming-color: var(--ccx-status-active-dot-bg);
+  --ccx-led-streaming-glow: var(--ccx-status-active-dot-glow);
+  --ccx-fused-stripe-a: #dc2626;
+  --ccx-fused-stripe-b: #1a1a1a;
+  --ccx-kind-messages: #a855f7;
+  --ccx-kind-chat: #3b82f6;
+  --ccx-kind-responses: #14b8a6;
+  --ccx-kind-gemini: #f97316;
+  --ccx-kind-images: #ec4899;
 }
 
 .v-theme--dark {
@@ -83,6 +99,10 @@
   --ccx-channel-row-breaker-half-open-bg: #1e3a8a;
   --ccx-channel-row-breaker-half-open-hover-bg: #1d4ed8;
   --ccx-channel-row-breaker-half-open-border: #dbeafe;
+
+  /* HUD dark overrides */
+  --ccx-dot-grid-color: rgba(var(--v-theme-on-surface), 0.06);
+  --ccx-fused-stripe-b: #2a2a2a;
 }
 
 /* 能力测试 Tooltip（全局样式，兼容 teleport 到 body） */
@@ -143,4 +163,28 @@ html {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
+}
+
+/* HUD Animations */
+@keyframes ccx-led-pulse {
+  0%, 100% { box-shadow: 0 0 3px 1px var(--ccx-led-streaming-glow); }
+  50%      { box-shadow: 0 0 8px 3px var(--ccx-led-streaming-glow); }
+}
+
+@keyframes ccx-slide-in {
+  from { opacity: 0; transform: translateX(-6px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+@keyframes ccx-alert-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -58,6 +58,12 @@ jobs:
           CGO_ENABLED=0 GOOS=windows GOARCH=arm64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.GitCommit=${{ github.sha }}" -o ccx-windows-arm64.exe
         working-directory: ./backend-go
 
+      - name: Generate checksums
+        run: |
+          cd backend-go
+          sha256sum ccx-windows-amd64.exe | awk '{print $1}' > ccx-windows-amd64.exe.sha256
+          sha256sum ccx-windows-arm64.exe | awk '{print $1}' > ccx-windows-arm64.exe.sha256
+
       - name: Release
         uses: softprops/action-gh-release@v2.0.5
         if: startsWith(github.ref, 'refs/tags/')
@@ -65,6 +71,8 @@ jobs:
           files: |
             backend-go/ccx-windows-amd64.exe
             backend-go/ccx-windows-arm64.exe
+            backend-go/ccx-windows-amd64.exe.sha256
+            backend-go/ccx-windows-arm64.exe.sha256
           draft: true
           generate_release_notes: true
         env:

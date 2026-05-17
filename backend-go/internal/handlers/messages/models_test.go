@@ -515,3 +515,153 @@ func TestModelsDetailHandler_ChatFallbackRespectsRoutePrefix(t *testing.T) {
 		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
 	}
 }
+
+func TestBuildClaudeCompatibleModelsURLs(t *testing.T) {
+	tests := []struct {
+		name     string
+		baseURL  string
+		expected []string
+	}{
+		{
+			name:    "纯域名不产生额外候选",
+			baseURL: "https://api.anthropic.com",
+			expected: []string{
+				"https://api.anthropic.com/v1/models",
+			},
+		},
+		{
+			name:    "带 /anthropic 尾段产生两个候选（剔除后即纯域名）",
+			baseURL: "https://api.deepseek.com/anthropic",
+			expected: []string{
+				"https://api.deepseek.com/anthropic/v1/models",
+				"https://api.deepseek.com/v1/models",
+			},
+		},
+		{
+			name:    "带 /anthropic/v1 尾段产生两个候选",
+			baseURL: "https://api.deepseek.com/anthropic/v1",
+			expected: []string{
+				"https://api.deepseek.com/anthropic/v1/models",
+				"https://api.deepseek.com/v1/models",
+			},
+		},
+		{
+			name:    "带 /proxy/anthropic 产生三个候选",
+			baseURL: "https://api.vendor.com/proxy/anthropic",
+			expected: []string{
+				"https://api.vendor.com/proxy/anthropic/v1/models",
+				"https://api.vendor.com/proxy/v1/models",
+				"https://api.vendor.com/v1/models",
+			},
+		},
+		{
+			name:    "带 /proxy/claude/v1 产生三个候选",
+			baseURL: "https://api.vendor.com/proxy/claude/v1",
+			expected: []string{
+				"https://api.vendor.com/proxy/claude/v1/models",
+				"https://api.vendor.com/proxy/v1/models",
+				"https://api.vendor.com/v1/models",
+			},
+		},
+		{
+			name:    "带 /messages 尾段产生两个候选",
+			baseURL: "https://api.vendor.com/messages",
+			expected: []string{
+				"https://api.vendor.com/messages/v1/models",
+				"https://api.vendor.com/v1/models",
+			},
+		},
+		{
+			name:    "非协议尾段不产生额外候选",
+			baseURL: "https://api.vendor.com/openai",
+			expected: []string{
+				"https://api.vendor.com/openai/v1/models",
+			},
+		},
+		{
+			name:    "# 标记保持兼容",
+			baseURL: "https://api.vendor.com/anthropic#",
+			expected: []string{
+				"https://api.vendor.com/anthropic/models",
+				"https://api.vendor.com/v1/models",
+			},
+		},
+		{
+			name:    "带端口的域名",
+			baseURL: "https://localhost:8080/anthropic",
+			expected: []string{
+				"https://localhost:8080/anthropic/v1/models",
+				"https://localhost:8080/v1/models",
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := buildClaudeCompatibleModelsURLs(tt.baseURL)
+			if len(got) != len(tt.expected) {
+				t.Fatalf("候选数量不匹配: got %v, want %v", got, tt.expected)
+			}
+			for i := range got {
+				if got[i] != tt.expected[i] {
+					t.Errorf("候选[%d] = %q, want %q", i, got[i], tt.expected[i])
+				}
+			}
+		})
+	}
+}
+
+func TestTryModelsRequest_ClaudeCompatFallback(t *testing.T) {
+	// 模拟上游：第一个 URL 返回 404，第二个返回 200
+	callCount := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		callCount++
+		if r.URL.Path == "/anthropic/v1/models" {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if r.URL.Path == "/v1/models" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"object":"list","data":[{"id":"deepseek-chat","object":"model","owned_by":"deepseek"}]}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer upstream.Close()
+
+	cfgManager := setupModelsConfigManager(t, config.Config{
+		Upstream: []config.UpstreamConfig{
+			{
+				Name:    "deepseek-compat",
+				BaseURL: upstream.URL + "/anthropic",
+				APIKeys: []string{"sk-test"},
+				Status:  "active",
+			},
+		},
+	})
+	sch := newModelsTestScheduler(cfgManager)
+	router := newModelsRouterForAggregate(&config.EnvConfig{ProxyAccessKey: "test-key"}, cfgManager, sch)
+
+	req := httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer test-key")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, body=%s", w.Code, w.Body.String())
+	}
+	if callCount < 2 {
+		t.Errorf("期望至少 2 次请求（第一次 404 后 fallback），实际 %d 次", callCount)
+	}
+
+	var resp ModelsResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析响应失败: %v", err)
+	}
+	if len(resp.Data) == 0 {
+		t.Fatal("期望返回模型列表，但为空")
+	}
+	if resp.Data[0].ID != "deepseek-chat" {
+		t.Errorf("模型 ID = %q, want %q", resp.Data[0].ID, "deepseek-chat")
+	}
+}

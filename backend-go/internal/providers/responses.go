@@ -34,11 +34,22 @@ func (p *ResponsesProvider) ConvertToProviderRequest(
 		return nil, nil, fmt.Errorf("读取请求体失败: %w", err)
 	}
 
+	return p.ConvertBodyToProviderRequest(c, upstream, apiKey, bodyBytes, c.Request.URL.Path)
+}
+
+// ConvertBodyToProviderRequest 将指定 body 转换为上游请求（公共入口，供 compact 等场景复用）
+func (p *ResponsesProvider) ConvertBodyToProviderRequest(
+	c *gin.Context,
+	upstream *config.UpstreamConfig,
+	apiKey string,
+	bodyBytes []byte,
+	requestPath string,
+) (*http.Request, []byte, error) {
 	if p.SessionManager == nil {
 		p.SessionManager = newDefaultSessionManager()
 	}
 
-	providerReq, reqBodyForURL, err := p.buildProviderRequestBody(c, c.Request.URL.Path, bodyBytes, upstream)
+	providerReq, reqBodyForURL, err := p.buildProviderRequestBody(c, requestPath, bodyBytes, upstream)
 	if err != nil {
 		return nil, bodyBytes, err
 	}

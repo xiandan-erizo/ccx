@@ -17,6 +17,14 @@ export type MessageKey =
   | 'app.tabs.responses'
   | 'app.tabs.gemini'
   | 'app.tabs.images'
+  | 'app.tabs.conversations'
+  | 'cockpit.overrideActive'
+  | 'cockpit.restoreDefault'
+  | 'cockpit.empty'
+  | 'cockpit.noMatches'
+  | 'cockpit.searchPlaceholder'
+  | 'cockpit.rawUserIdCopied'
+  | 'cockpit.rawUserIdCopyFailed'
   | 'app.header.logout'
   | 'app.stats.trafficTitle'
   | 'app.stats.totalChannels'
@@ -400,6 +408,21 @@ export type MessageKey =
   | 'tooltip.billingDisabled'
   | 'tooltip.fuzzyEnabled'
   | 'tooltip.fuzzyDisabled'
+  | 'update.title'
+  | 'update.currentVersion'
+  | 'update.latestVersion'
+  | 'update.upToDate'
+  | 'update.available'
+  | 'update.checking'
+  | 'update.checkFailed'
+  | 'update.applyBtn'
+  | 'update.applying'
+  | 'update.success'
+  | 'update.restarting'
+  | 'update.restartTimeout'
+  | 'update.dockerHint'
+  | 'update.permissionDenied'
+  | 'update.checkBtn'
 
 export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
   en: {
@@ -419,6 +442,14 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'app.tabs.responses': 'Codex',
     'app.tabs.gemini': 'Gemini',
     'app.tabs.images': 'Images',
+    'app.tabs.conversations': 'Cockpit',
+    'cockpit.overrideActive': 'Custom channel order is active. Auto-reset in {time}',
+    'cockpit.restoreDefault': 'Restore default order',
+    'cockpit.empty': 'No active flights. Conversations will appear on radar when requests pass through the gateway.',
+    'cockpit.noMatches': 'No conversations match the current filter.',
+    'cockpit.searchPlaceholder': 'Search...',
+    'cockpit.rawUserIdCopied': 'User ID copied',
+    'cockpit.rawUserIdCopyFailed': 'Copy failed',
     'app.header.logout': 'Logout',
     'app.stats.trafficTitle': '{tab} traffic',
     'app.stats.totalChannels': 'Total channels',
@@ -802,6 +833,21 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'tooltip.billingDisabled': 'Disabled: keeps full billing header information.',
     'tooltip.fuzzyEnabled': 'Fuzzy mode is enabled: errors are handled loosely and all channels are retried.',
     'tooltip.fuzzyDisabled': 'Fuzzy mode is disabled: upstream responses are passed through precisely.',
+    'update.title': 'System Update',
+    'update.currentVersion': 'Current Version',
+    'update.latestVersion': 'Latest Version',
+    'update.upToDate': 'You are running the latest version',
+    'update.available': 'A new version is available',
+    'update.checking': 'Checking for updates...',
+    'update.checkFailed': 'Failed to check for updates',
+    'update.applyBtn': 'Update Now',
+    'update.applying': 'Updating...',
+    'update.success': 'Update successful, restarting...',
+    'update.restarting': 'Server is restarting, please wait...',
+    'update.restartTimeout': 'Server did not restart automatically. Please check manually.',
+    'update.dockerHint': 'Docker deployment detected. Please use Watchtower or pull a new image to update.',
+    'update.permissionDenied': 'Insufficient permissions to update',
+    'update.checkBtn': 'Check for Updates',
   },
   id: {
     'app.auth.verifyingTitle': 'Memverifikasi akses',
@@ -820,6 +866,14 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'app.tabs.responses': 'Codex',
     'app.tabs.gemini': 'Gemini',
     'app.tabs.images': 'Images',
+    'app.tabs.conversations': 'Cockpit',
+    'cockpit.overrideActive': 'Urutan channel kustom aktif. Otomatis kembali dalam {time}',
+    'cockpit.restoreDefault': 'Pulihkan urutan default',
+    'cockpit.empty': 'Belum ada sesi aktif. Percakapan akan muncul di radar saat request melewati gateway.',
+    'cockpit.noMatches': 'Tidak ada percakapan yang cocok dengan filter.',
+    'cockpit.searchPlaceholder': 'Cari...',
+    'cockpit.rawUserIdCopied': 'ID pengguna disalin',
+    'cockpit.rawUserIdCopyFailed': 'Gagal menyalin',
     'app.header.logout': 'Keluar',
     'app.stats.trafficTitle': 'Traffic {tab}',
     'app.stats.totalChannels': 'Total channel',
@@ -1203,6 +1257,21 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'tooltip.billingDisabled': 'Nonaktif: mempertahankan informasi header billing lengkap.',
     'tooltip.fuzzyEnabled': 'Fuzzy mode aktif: error diproses longgar dan semua channel akan dicoba otomatis.',
     'tooltip.fuzzyDisabled': 'Fuzzy mode nonaktif: response upstream diteruskan secara presisi.',
+    'update.title': 'Pembaruan Sistem',
+    'update.currentVersion': 'Versi Saat Ini',
+    'update.latestVersion': 'Versi Terbaru',
+    'update.upToDate': 'Anda menggunakan versi terbaru',
+    'update.available': 'Versi baru tersedia',
+    'update.checking': 'Memeriksa pembaruan...',
+    'update.checkFailed': 'Gagal memeriksa pembaruan',
+    'update.applyBtn': 'Perbarui Sekarang',
+    'update.applying': 'Memperbarui...',
+    'update.success': 'Pembaruan berhasil, memulai ulang...',
+    'update.restarting': 'Server sedang dimulai ulang, harap tunggu...',
+    'update.restartTimeout': 'Server tidak dimulai ulang secara otomatis. Silakan periksa secara manual.',
+    'update.dockerHint': 'Terdeteksi deployment Docker. Gunakan Watchtower atau pull image baru untuk memperbarui.',
+    'update.permissionDenied': 'Izin tidak cukup untuk memperbarui',
+    'update.checkBtn': 'Periksa Pembaruan',
   },
   'zh-CN': {
     'app.auth.verifyingTitle': '正在验证访问权限',
@@ -1221,6 +1290,14 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'app.tabs.responses': 'Codex',
     'app.tabs.gemini': 'Gemini',
     'app.tabs.images': 'Images',
+    'app.tabs.conversations': '驾驶舱',
+    'cockpit.overrideActive': '正在使用自定义渠道顺序，{time} 后自动恢复默认调度',
+    'cockpit.restoreDefault': '恢复默认顺序',
+    'cockpit.empty': '暂无活跃会话。请求经过网关后，会话会出现在驾驶舱雷达上。',
+    'cockpit.noMatches': '没有匹配当前过滤条件的会话',
+    'cockpit.searchPlaceholder': '搜索...',
+    'cockpit.rawUserIdCopied': '用户 ID 已复制',
+    'cockpit.rawUserIdCopyFailed': '复制失败',
     'app.header.logout': '注销',
     'app.stats.trafficTitle': '{tab} 流量统计',
     'app.stats.totalChannels': '总渠道数',
@@ -1604,5 +1681,20 @@ export const messages: Record<SupportedLocale, Record<MessageKey, string>> = {
     'tooltip.billingDisabled': '已关闭：保留完整的计费头信息',
     'tooltip.fuzzyEnabled': 'Fuzzy 模式已启用：模糊处理错误，自动尝试所有渠道',
     'tooltip.fuzzyDisabled': 'Fuzzy 模式已关闭：精确处理错误，透传上游响应',
+    'update.title': '系统更新',
+    'update.currentVersion': '当前版本',
+    'update.latestVersion': '最新版本',
+    'update.upToDate': '已是最新版本',
+    'update.available': '发现新版本',
+    'update.checking': '正在检查更新...',
+    'update.checkFailed': '检查更新失败',
+    'update.applyBtn': '立即升级',
+    'update.applying': '正在升级...',
+    'update.success': '升级成功，正在重启...',
+    'update.restarting': '服务器正在重启，请稍候...',
+    'update.restartTimeout': '服务器未能自动重启，请手动检查',
+    'update.dockerHint': '检测到 Docker 部署，请使用 Watchtower 或拉取新镜像进行更新',
+    'update.permissionDenied': '权限不足，无法升级',
+    'update.checkBtn': '检查更新',
   },
 }

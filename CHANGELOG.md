@@ -1,3 +1,39 @@
+## [v2.7.0] - 2026-05-17
+
+### 新增
+
+- **Responses Compact 本地压缩** - 当 responses 渠道上游为非原生 Responses 类型（openai/claude/gemini）时，`/v1/responses/compact` 端点自动切换为本地 compact 模式：将对话历史格式化为 transcript，通过现有 converter 管线发送普通请求让模型生成摘要，再包装为 Responses 格式返回。支持流式/非流式跟随客户端、session 历史读取与 compact 结果写回、大输入截断保护。原生 responses 上游若返回 404/405/501 也会自动回退本地 compact
+- **SessionManager 新增只读查询与压缩会话创建** - 新增 `GetSessionByResponseID` 通过 responseID 只读查找 session；新增 `CreateCompactedSession` 创建压缩后的轻量会话并记录映射
+- **ResponsesProvider 提取公共请求构建方法** - 新增 `ConvertBodyToProviderRequest` 公共入口，接受 bodyBytes 参数复用现有 URL/转换/认证逻辑，供 compact 等场景调用
+
+### 改进
+
+- **Messages 渠道模型列表兼容国内 Claude 协议入口** - 当 `base_url` 以 `/anthropic`、`/claude`、`/messages` 结尾时（如 `https://api.deepseek.com/anthropic`），模型列表获取自动尝试三段候选 URL：当前路径 → 剔除协议尾段 → 纯域名根路径，解决国内服务商模型接口不在兼容协议子路径下的问题。管理端"获取模型"同步适配。
+
+## [v2.6.99] - 2026-05-16
+
+### 修复
+
+- **Windows 兼容性修复** - 将 `syscall.Kill` 替换为 `os.FindProcess`，修复 Windows 平台上的编译兼容性问题
+
+## [v2.6.98] - 2026-05-16
+
+### 修复
+
+- **对话持久化字段补全** - `persistedConversation` 补齐 `RequestCount`、`Models`、`CurrentChannel`、`ChannelName`、`LastModel`、`LastRequestID` 字段，修复服务重启后对话卡片显示 "Channel 0" 和请求次数归零的问题
+- **NEXT 渠道 chip 可读性优化** - 为 ConversationCard 的 NEXT 渠道 chip 添加专用高对比度样式，避免橙色文字在浅色背景上不醒目
+
+### 新增
+
+- **会话标题持久化与实时补全** - 对话追踪器新增 `.config/conversation_state.json` 本地持久化，保存 `title`、AI 生成标题与最新用户消息兜底摘要，服务重启后驾驶舱卡片仍可保留标题和创建时间；用户每轮输入后实时用最新消息摘要补全卡片标题。
+
+### 改进
+
+- **Failover 不可重试错误日志输出上游响应体** - 当 failover 判定为不可重试错误（内容审核、参数校验等）时，日志中增加上游返回的 body 内容（截断至 4KB），便于快速定位 400 错误的具体原因（Closes #65）
+- **会话调度看板（Conversation Dashboard）** - 新增前端"Sessions"Tab 和后端 API，管理员可实时观察当前所有经过网关的活跃对话（按 kind:userID 聚合），并为单个对话自定义渠道优先级序列（含 failover 顺序）。支持拖拽排序、点击置顶、降级操作，覆盖规则 30 分钟 TTL 自动过期。
+- **对话追踪器（ConversationTracker）** - 后端新模块 `internal/conversation/`，自动追踪所有成功请求的对话元数据（模型、渠道、请求次数、状态），1 小时无活动标记 idle，2 小时后自动清理
+- **渠道序列覆盖（OverrideManager）** - 支持为单个对话设置完整的渠道调度序列，调度优先级：X-Channel > 促销期 > 手动覆盖 > Trace 亲和 > 默认排序
+
 ## [v2.6.97] - 2026-05-15
 
 ### 修复

@@ -44,6 +44,8 @@ type EnvConfig struct {
 	LogToConsole  bool // 是否同时输出到控制台
 	// 会话存储配置
 	SessionTTL int // 会话过期时间（秒），用于内存清理
+	// OTA 更新配置
+	AutoCheckUpdate bool // 启动时是否自动检查更新
 }
 
 // NewEnvConfig 创建环境配置
@@ -93,6 +95,8 @@ func NewEnvConfig() *EnvConfig {
 		LogToConsole:  getEnv("LOG_TO_CONSOLE", "true") != "false",
 		// 会话存储配置
 		SessionTTL: getEnvAsInt("SESSION_TTL", 86400),
+		// OTA 更新
+		AutoCheckUpdate: getEnv("AUTO_CHECK_UPDATE", "true") != "false",
 	}
 }
 

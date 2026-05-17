@@ -51,7 +51,7 @@ func (e *compactError) errorInfo() string {
 func CompactHandler(
 	envCfg *config.EnvConfig,
 	cfgManager *config.ConfigManager,
-	_ *session.SessionManager,
+	sessionManager *session.SessionManager,
 	channelScheduler *scheduler.ChannelScheduler,
 ) gin.HandlerFunc {
 	return gin.HandlerFunc(func(c *gin.Context) {
@@ -75,9 +75,9 @@ func CompactHandler(
 		isMultiChannel := channelScheduler.IsMultiChannelMode(scheduler.ChannelKindResponses)
 
 		if isMultiChannel {
-			handleMultiChannelCompact(c, envCfg, cfgManager, channelScheduler, bodyBytes, userID)
+			handleMultiChannelCompact(c, envCfg, cfgManager, channelScheduler, sessionManager, bodyBytes, userID)
 		} else {
-			handleSingleChannelCompact(c, envCfg, cfgManager, channelScheduler, bodyBytes)
+			handleSingleChannelCompact(c, envCfg, cfgManager, channelScheduler, sessionManager, bodyBytes)
 		}
 	})
 }
@@ -88,6 +88,7 @@ func handleSingleChannelCompact(
 	envCfg *config.EnvConfig,
 	cfgManager *config.ConfigManager,
 	channelScheduler *scheduler.ChannelScheduler,
+	sessionManager *session.SessionManager,
 	bodyBytes []byte,
 ) {
 	upstream, channelIndex, err := cfgManager.GetCurrentResponsesUpstreamWithIndex()
@@ -116,7 +117,7 @@ func handleSingleChannelCompact(
 		}
 
 		attemptStart := time.Now()
-		success, compactErr := tryCompactWithKey(c, upstream, apiKey, bodyBytes, envCfg, cfgManager)
+		success, compactErr := tryCompactWithKey(c, upstream, apiKey, bodyBytes, envCfg, cfgManager, sessionManager)
 		if success {
 			common.RecordChannelLog(channelLogStore, channelIndex, requestModel, "", http.StatusOK, time.Since(attemptStart).Milliseconds(), true, apiKey, upstream.BaseURL, "", "Responses", attempt > 0)
 			channelScheduler.RecordSuccessWithUsage(upstream.BaseURL, apiKey, metricsServiceType, nil, scheduler.ChannelKindResponses)
@@ -164,6 +165,7 @@ func handleMultiChannelCompact(
 	envCfg *config.EnvConfig,
 	cfgManager *config.ConfigManager,
 	channelScheduler *scheduler.ChannelScheduler,
+	sessionManager *session.SessionManager,
 	bodyBytes []byte,
 	userID string,
 ) {
@@ -185,11 +187,16 @@ func handleMultiChannelCompact(
 		channelIndex := selection.ChannelIndex
 
 		// 每个渠道尝试所有 key
-		success, successKey, compactErr := tryCompactChannelWithAllKeys(c, upstream, channelIndex, requestModel, cfgManager, channelScheduler, channelLogStore, bodyBytes, envCfg)
+		success, successKey, compactErr := tryCompactChannelWithAllKeys(c, upstream, channelIndex, requestModel, cfgManager, channelScheduler, channelLogStore, bodyBytes, envCfg, sessionManager)
 		if success {
 			// 只有真正成功的请求才设置 Trace 亲和
 			if successKey != "" {
 				channelScheduler.SetTraceAffinity(userID, channelIndex, scheduler.ChannelKindResponses)
+				channelName := ""
+				if upstream != nil {
+					channelName = upstream.Name
+				}
+				channelScheduler.TrackConversation(scheduler.ChannelKindResponses, userID, requestModel, channelIndex, channelName, "", "", 0)
 			}
 			return
 		}
@@ -232,6 +239,7 @@ func tryCompactChannelWithAllKeys(
 	channelLogStore *metrics.ChannelLogStore,
 	bodyBytes []byte,
 	envCfg *config.EnvConfig,
+	sessionManager *session.SessionManager,
 ) (bool, string, *compactError) {
 	if len(upstream.APIKeys) == 0 {
 		return false, "", nil
@@ -269,7 +277,7 @@ func tryCompactChannelWithAllKeys(
 		}
 
 		attemptStart := time.Now()
-		success, compactErr := tryCompactWithKey(c, upstream, apiKey, bodyBytes, envCfg, cfgManager)
+		success, compactErr := tryCompactWithKey(c, upstream, apiKey, bodyBytes, envCfg, cfgManager, sessionManager)
 
 		if success {
 			common.RecordChannelLog(channelLogStore, channelIndex, requestModel, "", http.StatusOK, time.Since(attemptStart).Milliseconds(), true, apiKey, upstream.BaseURL, "", "Responses", attempt > 0)
@@ -322,7 +330,13 @@ func tryCompactWithKey(
 	bodyBytes []byte,
 	envCfg *config.EnvConfig,
 	cfgManager *config.ConfigManager,
+	sessionManager *session.SessionManager,
 ) (bool, *compactError) {
+	// 非 responses 类型上游走本地 compact
+	if needsLocalCompact(upstream) {
+		return tryLocalCompactWithKey(c, upstream, apiKey, bodyBytes, envCfg, cfgManager, sessionManager)
+	}
+
 	targetURL := buildCompactURL(upstream)
 	req, err := http.NewRequestWithContext(c.Request.Context(), "POST", targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
@@ -347,6 +361,11 @@ func tryCompactWithKey(
 
 	// 判断是否需要故障转移
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		// 原生 compact 不支持时回退到本地 compact
+		if isNativeCompactUnsupported(resp.StatusCode) {
+			log.Printf("[Compact-Local] 原生 compact 不支持，回退本地 compact: status=%d", resp.StatusCode)
+			return tryLocalCompactWithKey(c, upstream, apiKey, bodyBytes, envCfg, cfgManager, sessionManager)
+		}
 		shouldFailover, _ := common.ShouldRetryWithNextKey(resp.StatusCode, respBody, cfgManager.GetFuzzyModeEnabled(), "Responses")
 		return false, &compactError{status: resp.StatusCode, body: respBody, shouldFailover: shouldFailover}
 	}

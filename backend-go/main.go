@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
+	"github.com/BenedictKing/ccx/internal/conversation"
 	"github.com/BenedictKing/ccx/internal/handlers"
 	"github.com/BenedictKing/ccx/internal/handlers/chat"
 	"github.com/BenedictKing/ccx/internal/handlers/gemini"
@@ -23,6 +24,7 @@ import (
 	"github.com/BenedictKing/ccx/internal/middleware"
 	"github.com/BenedictKing/ccx/internal/scheduler"
 	"github.com/BenedictKing/ccx/internal/session"
+	"github.com/BenedictKing/ccx/internal/updater"
 	"github.com/BenedictKing/ccx/internal/warmup"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -157,6 +159,12 @@ func main() {
 	channelScheduler := scheduler.NewChannelScheduler(cfgManager, messagesMetricsManager, responsesMetricsManager, geminiMetricsManager, chatMetricsManager, imagesMetricsManager, traceAffinityManager, urlManager)
 	log.Printf("[Scheduler-Init] 多渠道调度器已初始化 (失败率阈值: %.0f%%, 滑动窗口: %d)",
 		messagesMetricsManager.GetFailureThreshold()*100, messagesMetricsManager.GetWindowSize())
+
+	// 初始化对话追踪器和覆盖管理器
+	conversationTracker := conversation.NewConversationTracker(1*time.Hour, 24*time.Hour, ".config/conversation_state.json")
+	overrideManager := conversation.NewOverrideManager(30 * time.Minute)
+	channelScheduler.SetConversationComponents(conversationTracker, overrideManager)
+	log.Printf("[Conversation-Init] 对话追踪器和覆盖管理器已初始化 (idle: 1h, expire: 2h, override TTL: 30m)")
 
 	scheduledRecoveryStop := make(chan struct{})
 	go func() {
@@ -296,6 +304,23 @@ func main() {
 	// 开发信息端点
 	if envCfg.IsDevelopment() {
 		r.GET("/admin/dev/info", handlers.DevInfo(envCfg, cfgManager))
+	}
+
+	// 初始化 OTA 更新器
+	appUpdater := updater.New(Version, func() {
+		p, _ := os.FindProcess(os.Getpid())
+		p.Signal(os.Interrupt)
+	})
+	if envCfg.AutoCheckUpdate {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+			defer cancel()
+			if status, err := appUpdater.CheckUpdate(ctx); err != nil {
+				log.Printf("[Updater-Init] 自动检查更新失败: %v", err)
+			} else if status.HasUpdate {
+				log.Printf("[Updater-Init] 发现新版本: %s (当前: %s)", status.LatestVersion, status.CurrentVersion)
+			}
+		}()
 	}
 
 	// Web 管理界面 API 路由
@@ -461,6 +486,20 @@ func main() {
 		// 移除计费头设置
 		apiGroup.GET("/settings/strip-billing-header", handlers.GetStripBillingHeader(cfgManager))
 		apiGroup.PUT("/settings/strip-billing-header", handlers.SetStripBillingHeader(cfgManager))
+
+		// 会话调度看板 API
+		convDeps := &handlers.ConversationHandlerDeps{
+			Tracker:          conversationTracker,
+			OverrideManager:  overrideManager,
+			ChannelScheduler: channelScheduler,
+		}
+		apiGroup.GET("/conversations", handlers.GetConversations(convDeps))
+		apiGroup.POST("/conversations/:id/override", handlers.SetConversationOverride(convDeps))
+		apiGroup.DELETE("/conversations/:id/override", handlers.RemoveConversationOverride(convDeps))
+
+		// OTA 更新 API
+		apiGroup.GET("/system/update/check", handlers.CheckUpdateHandler(appUpdater))
+		apiGroup.POST("/system/update/apply", handlers.ApplyUpdateHandler(appUpdater))
 	}
 
 	// 代理端点 - Messages API
@@ -611,6 +650,10 @@ func main() {
 				log.Println("[Metrics-Shutdown] 指标存储已安全关闭")
 			}
 		}
+
+		// 关闭对话追踪器（flush 持久化状态）
+		conversationTracker.Stop()
+		log.Println("[Conversation-Shutdown] 对话追踪器已安全关闭")
 
 		close(scheduledRecoveryStop)
 		close(shutdownDone)

@@ -691,6 +691,6 @@ echo $ENV  # 必须是 development
 
 ## 文档资源
 
-- **项目架构**: 参见 [ARCHITECTURE.md](ARCHITECTURE.md)
-- **快速开始**: 参见 [README.md](README.md)
-- **贡献指南**: 参见 [CONTRIBUTING.md](CONTRIBUTING.md)
+- **项目架构**: 参见 [架构说明](./architecture.md)
+- **快速开始**: 参见 [快速开始](./getting-started.md)
+- **贡献指南**: 参见 [贡献指南](./contributing.md)

@@ -11,6 +11,11 @@ const routes = [
     component: () => import('@/views/ChannelsView.vue'),  // 懒加载
     props: true,  // 将路由参数作为 props 传递
     meta: { requiresAuth: true }
+  },
+  {
+    path: '/conversations',
+    component: () => import('@/views/ConversationsView.vue'),
+    meta: { requiresAuth: true }
   }
 ]
 

@@ -63,6 +63,10 @@ func Handler(
 		affinityBody := common.NormalizeMetadataUserID(bodyBytes)
 		userID := utils.ExtractUnifiedSessionID(c, affinityBody)
 
+		// 统计 user 输入用于驾驶舱标题与轮数
+		c.Set("lastUserMessage", extractLastResponsesUserInput(responsesReq.Input))
+		c.Set("userMessageCount", countResponsesUserMessages(responsesReq.Input))
+
 		// 记录原始请求信息（仅在入口处记录一次）
 		common.LogOriginalRequest(c, bodyBytes, envCfg, "Responses")
 
@@ -1540,6 +1544,108 @@ func patchResponsesCompletedEventUsage(event string, requestBody []byte, outputT
 // parseInputToItems 解析 input 为 ResponsesItem 数组
 func parseInputToItems(input interface{}) ([]types.ResponsesItem, error) {
 	return types.ParseResponsesInput(input)
+}
+
+func countResponsesUserMessages(input interface{}) int {
+	return len(extractResponsesUserInputTexts(input))
+}
+
+func extractLastResponsesUserInput(input interface{}) string {
+	const maxLen = 80
+	texts := extractResponsesUserInputTexts(input)
+	if len(texts) == 0 {
+		return ""
+	}
+
+	var parts []string
+	totalLen := 0
+	for i := len(texts) - 1; i >= 0; i-- {
+		parts = append(parts, texts[i])
+		totalLen += len([]rune(texts[i]))
+		if totalLen >= maxLen {
+			break
+		}
+	}
+	for left, right := 0, len(parts)-1; left < right; left, right = left+1, right-1 {
+		parts[left], parts[right] = parts[right], parts[left]
+	}
+	return strings.Join(parts, " / ")
+}
+
+func extractResponsesUserInputTexts(input interface{}) []string {
+	switch v := input.(type) {
+	case string:
+		if cleaned := cleanResponsesUserText(v); cleaned != "" {
+			return []string{cleaned}
+		}
+		return nil
+	case []interface{}:
+		var texts []string
+		for _, item := range v {
+			m, ok := item.(map[string]interface{})
+			if !ok || m["role"] != "user" {
+				continue
+			}
+			texts = append(texts, extractResponsesContentTexts(m["content"])...)
+		}
+		return texts
+	}
+	return nil
+}
+
+func extractResponsesContentTexts(content interface{}) []string {
+	switch v := content.(type) {
+	case string:
+		if cleaned := cleanResponsesUserText(v); cleaned != "" {
+			return []string{cleaned}
+		}
+	case []interface{}:
+		var texts []string
+		for _, block := range v {
+			m, ok := block.(map[string]interface{})
+			if !ok || m["type"] != "input_text" {
+				continue
+			}
+			if text, ok := m["text"].(string); ok {
+				if cleaned := cleanResponsesUserText(text); cleaned != "" {
+					texts = append(texts, cleaned)
+				}
+			}
+		}
+		return texts
+	}
+	return nil
+}
+
+func cleanResponsesUserText(text string) string {
+	text = removeResponsesTaggedBlocks(text, "system-reminder")
+	text = removeResponsesTaggedBlocks(text, "local-command-caveat")
+	text = removeResponsesTaggedBlocks(text, "command-name")
+	text = removeResponsesTaggedBlocks(text, "command-message")
+	text = removeResponsesTaggedBlocks(text, "command-args")
+	text = removeResponsesTaggedBlocks(text, "local-command-stdout")
+	text = removeResponsesTaggedBlocks(text, "local-command-stderr")
+	text = strings.TrimSpace(text)
+	if strings.HasPrefix(text, "<") && strings.Contains(text, ">") {
+		return ""
+	}
+	return text
+}
+
+func removeResponsesTaggedBlocks(text, tag string) string {
+	for {
+		start := strings.Index(text, "<"+tag+">")
+		if start < 0 {
+			return text
+		}
+		endTag := "</" + tag + ">"
+		end := strings.Index(text[start:], endTag)
+		if end < 0 {
+			return strings.TrimSpace(text[:start])
+		}
+		end += start + len(endTag)
+		text = text[:start] + text[end:]
+	}
 }
 
 // hasResponsesFunctionCall 检查 Responses 事件中是否包含工具调用

@@ -371,6 +371,7 @@ type StreamContext struct {
 	LowQuality   bool   // 是否为低质量渠道
 	// 隐式缓存推断
 	MessageStartInputTokens int // message_start 事件中的 input_tokens（用于推断隐式缓存）
+	ResponseText            string
 }
 
 // CollectedUsageData 从流事件中收集的 usage 数据
@@ -527,6 +528,7 @@ func ProcessStreamEvent(
 
 	// 提取文本用于估算 token
 	ExtractTextFromEvent(event, &ctx.OutputTextBuffer)
+	ctx.ResponseText = ctx.OutputTextBuffer.String()
 
 	// 检测并收集 usage
 	hasUsage, needInputPatch, needOutputPatch, usageData := CheckEventUsageStatus(event, envCfg.EnableResponseLogs && envCfg.ShouldLog("debug"))
@@ -966,6 +968,7 @@ func HandleStreamResponse(
 	}
 
 	usage, err := ProcessStreamEvents(c, w, flusher, eventChan, errChan, ctx, envCfg, startTime, requestBody)
+	c.Set("responseText", ctx.ResponseText)
 	if err != nil {
 		return nil, err
 	}

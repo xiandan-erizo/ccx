@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"regexp"
 	"sort"
 	"strings"
@@ -204,12 +205,21 @@ func tryModelsRequest(c *gin.Context, cfgManager *config.ConfigManager, channelS
 
 		upstream := selection.Upstream
 
-		var url string
+		// 构建候选 URL 列表
+		var candidateURLs []string
 		if upstream.ServiceType == "gemini" || kind == scheduler.ChannelKindGemini {
-			url = buildGeminiModelsURL(upstream.BaseURL) + suffix
+			candidateURLs = []string{buildGeminiModelsURL(upstream.BaseURL) + suffix}
+		} else if kind == scheduler.ChannelKindMessages {
+			// messages/claude 渠道使用三段候选
+			bases := buildClaudeCompatibleModelsURLs(upstream.BaseURL)
+			candidateURLs = make([]string, len(bases))
+			for i, b := range bases {
+				candidateURLs[i] = b + suffix
+			}
 		} else {
-			url = buildModelsURL(upstream.BaseURL) + suffix
+			candidateURLs = []string{buildModelsURL(upstream.BaseURL) + suffix}
 		}
+
 		client := httpclient.GetManager().GetStandardClient(modelsRequestTimeout, upstream.InsecureSkipVerify, upstream.ProxyURL)
 
 		apiKey, usedDisabledFallback, err := cfgManager.GetAdminAPIKey(upstream, nil, channelType)
@@ -222,45 +232,57 @@ func tryModelsRequest(c *gin.Context, cfgManager *config.ConfigManager, channelS
 			log.Printf("[%s-Models] 使用已拉黑密钥查询模型列表: channel=%s, key=%s", channelType, upstream.Name, utils.MaskAPIKey(apiKey))
 		}
 
-		req, err := http.NewRequestWithContext(c.Request.Context(), method, url, nil)
-		if err != nil {
-			log.Printf("[%s-Models] 创建请求失败: channel=%s, url=%s, error=%v", channelType, upstream.Name, url, err)
-			failedChannels[selection.ChannelIndex] = true
-			continue
-		}
-		if upstream.ServiceType == "gemini" || kind == scheduler.ChannelKindGemini {
-			utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
-		} else {
-			utils.SetAuthenticationHeader(req.Header, apiKey)
-		}
-		req.Header.Set("Content-Type", "application/json")
-		utils.ApplyCustomHeaders(req.Header, upstream.CustomHeaders)
-
-		resp, err := client.Do(req)
-		if err != nil {
-			log.Printf("[%s-Models] 请求失败: channel=%s, key=%s, url=%s, error=%v",
-				channelType, upstream.Name, utils.MaskAPIKey(apiKey), url, err)
-			failedChannels[selection.ChannelIndex] = true
-			continue
-		}
-
-		if resp.StatusCode == http.StatusOK {
-			body, err := io.ReadAll(resp.Body)
-			resp.Body.Close()
+		// 依次尝试候选 URL
+		channelSuccess := false
+		for _, candidateURL := range candidateURLs {
+			req, err := http.NewRequestWithContext(c.Request.Context(), method, candidateURL, nil)
 			if err != nil {
-				log.Printf("[%s-Models] 读取响应失败: channel=%s, error=%v", channelType, upstream.Name, err)
-				failedChannels[selection.ChannelIndex] = true
+				log.Printf("[%s-Models] 创建请求失败: channel=%s, url=%s, error=%v", channelType, upstream.Name, candidateURL, err)
 				continue
 			}
-			log.Printf("[%s-Models] 请求成功: method=%s, channel=%s, key=%s, url=%s, reason=%s",
-				channelType, method, upstream.Name, utils.MaskAPIKey(apiKey), url, selection.Reason)
-			return body, true
+			if upstream.ServiceType == "gemini" || kind == scheduler.ChannelKindGemini {
+				utils.SetGeminiAuthenticationHeader(req.Header, apiKey)
+			} else {
+				utils.SetAuthenticationHeader(req.Header, apiKey)
+			}
+			req.Header.Set("Content-Type", "application/json")
+			utils.ApplyCustomHeaders(req.Header, upstream.CustomHeaders)
+
+			resp, err := client.Do(req)
+			if err != nil {
+				log.Printf("[%s-Models] 请求失败: channel=%s, key=%s, url=%s, error=%v",
+					channelType, upstream.Name, utils.MaskAPIKey(apiKey), candidateURL, err)
+				continue
+			}
+
+			if resp.StatusCode == http.StatusOK {
+				body, err := io.ReadAll(resp.Body)
+				resp.Body.Close()
+				if err != nil {
+					log.Printf("[%s-Models] 读取响应失败: channel=%s, error=%v", channelType, upstream.Name, err)
+					continue
+				}
+				log.Printf("[%s-Models] 请求成功: method=%s, channel=%s, key=%s, url=%s, reason=%s",
+					channelType, method, upstream.Name, utils.MaskAPIKey(apiKey), candidateURL, selection.Reason)
+				return body, true
+			}
+
+			// 401/403 认证失败不继续尝试其他候选 URL
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				log.Printf("[%s-Models] 上游认证失败: channel=%s, key=%s, status=%d, url=%s",
+					channelType, upstream.Name, utils.MaskAPIKey(apiKey), resp.StatusCode, candidateURL)
+				resp.Body.Close()
+				break
+			}
+
+			log.Printf("[%s-Models] 上游返回非 200: channel=%s, key=%s, status=%d, url=%s",
+				channelType, upstream.Name, utils.MaskAPIKey(apiKey), resp.StatusCode, candidateURL)
+			resp.Body.Close()
 		}
 
-		log.Printf("[%s-Models] 上游返回非 200: channel=%s, key=%s, status=%d, url=%s",
-			channelType, upstream.Name, utils.MaskAPIKey(apiKey), resp.StatusCode, url)
-		resp.Body.Close()
-		failedChannels[selection.ChannelIndex] = true
+		if !channelSuccess {
+			failedChannels[selection.ChannelIndex] = true
+		}
 	}
 
 	log.Printf("[%s-Models] 所有渠道均失败: method=%s, suffix=%s", channelType, method, suffix)
@@ -381,4 +403,54 @@ func buildGeminiModelsURL(baseURL string) string {
 	}
 
 	return baseURL + endpoint
+}
+
+// claudeCompatProtocolSuffixes 是 Claude/Messages 兼容协议常见的路径尾段
+var claudeCompatProtocolSuffixes = []string{"anthropic", "claude", "messages"}
+
+// buildClaudeCompatibleModelsURLs 为 messages/claude 渠道构建候选模型列表 URL（去重）
+// 顺序：1) 当前逻辑 2) 剔除协议尾段后 3) 纯域名根路径
+func buildClaudeCompatibleModelsURLs(baseURL string) []string {
+	candidates := make([]string, 0, 3)
+	seen := make(map[string]bool, 3)
+
+	add := func(u string) {
+		if u != "" && !seen[u] {
+			seen[u] = true
+			candidates = append(candidates, u)
+		}
+	}
+
+	// 第一次：当前逻辑
+	add(buildModelsURL(baseURL))
+
+	// 规范化：去掉 # 和尾部 /
+	normalized := strings.TrimSuffix(baseURL, "#")
+	normalized = strings.TrimSuffix(normalized, "/")
+
+	// 剥离尾部版本段
+	versionPattern := regexp.MustCompile(`/v\d+[a-z]*$`)
+	stripped := versionPattern.ReplaceAllString(normalized, "")
+
+	// 第二次：如果最后一段是已知协议前缀，剔除后构建
+	lastSlash := strings.LastIndex(stripped, "/")
+	if lastSlash > 0 {
+		lastSeg := strings.ToLower(stripped[lastSlash+1:])
+		for _, suffix := range claudeCompatProtocolSuffixes {
+			if lastSeg == suffix {
+				strippedBase := stripped[:lastSlash]
+				add(buildModelsURL(strippedBase))
+
+				// 第三次：如果剔除后仍不是纯域名，用纯域名
+				parsed, err := url.Parse(strippedBase)
+				if err == nil && parsed.Path != "" && parsed.Path != "/" {
+					origin := parsed.Scheme + "://" + parsed.Host
+					add(buildModelsURL(origin))
+				}
+				break
+			}
+		}
+	}
+
+	return candidates
 }

@@ -1461,6 +1461,85 @@ export class ApiService {
       body: JSON.stringify(request)
     })
   }
+
+  // ============== 会话调度看板 API ==============
+
+  async getConversations(kind?: string): Promise<ConversationsResponse> {
+    const params = kind ? `?kind=${kind}` : ''
+    return this.request(`/conversations${params}`)
+  }
+
+  async setConversationOverride(id: string, sequence: ChannelSequenceEntry[]): Promise<void> {
+    await this.request(`/conversations/${id}/override`, {
+      method: 'POST',
+      body: JSON.stringify({ sequence })
+    })
+  }
+
+  async removeConversationOverride(id: string): Promise<void> {
+    await this.request(`/conversations/${id}/override`, {
+      method: 'DELETE'
+    })
+  }
+
+  // OTA 更新
+  async checkUpdate(): Promise<UpdateStatusResponse> {
+    return this.request('/system/update/check')
+  }
+
+  async applyUpdate(): Promise<{ message: string }> {
+    return this.request('/system/update/apply', { method: 'POST' })
+  }
+}
+
+// 会话调度看板类型
+export interface ChannelSequenceEntry {
+  channelIndex: number
+  channelName: string
+}
+
+export interface ConversationInfo {
+  id: string
+  kind: 'messages' | 'responses' | 'chat' | 'gemini' | 'images'
+  userId: string
+  rawUserId?: string
+  title?: string
+  createdAt: string
+  lastActiveAt: string
+  requestCount: number
+  models: string[]
+  currentChannel: number
+  channelName: string
+  status: 'active' | 'streaming' | 'idle'
+  lastModel: string
+  lastRequestId: string
+}
+
+export interface SequenceOverrideInfo {
+  sequence: ChannelSequenceEntry[]
+  setAt: string
+  expiresAt: string
+}
+
+export interface ConversationsResponse {
+  conversations: ConversationInfo[]
+  total: number
+  overrides: Record<string, SequenceOverrideInfo>
+  channelsByKind?: Record<string, { index: number; name: string; priority: number; status: string }[]>
+}
+
+// OTA 更新状态响应类型
+export interface UpdateStatusResponse {
+  current_version: string
+  latest_version: string
+  has_update: boolean
+  can_update: boolean
+  is_docker: boolean
+  update_disabled_reason: string
+  release_notes: string
+  release_url: string
+  is_updating: boolean
+  checked_at: string
 }
 
 // 健康检查响应类型

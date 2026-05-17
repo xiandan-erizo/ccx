@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Added
+
+- 新增内置 OTA 更新能力：后端提供 `/api/system/update/check` 与 `/api/system/update/apply` 管理接口，支持 GitHub Release 版本检查、SHA256 校验、二进制替换备份与 Docker 环境禁用升级提示。
+- 新增前端系统更新对话框，版本徽标优先通过后端检查更新，失败时保留 GitHub 直连降级路径，并支持升级后健康检查轮询。
+- 发布工作流为 Linux、macOS、Windows 各平台资产生成并上传独立 `.sha256` 校验文件。
+
 ### Fixed
 
 - 修复 Responses 转 Chat 时孤儿 reasoning 生成 `content:null` 的 assistant 消息，避免 Codex 停止生成后继续输入触发 DeepSeek `Invalid assistant message: content or tool_calls must be set` 错误。

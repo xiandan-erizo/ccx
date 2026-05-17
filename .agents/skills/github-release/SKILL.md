@@ -68,8 +68,10 @@ cat CHANGELOG.md
 > ⚠️ **【必须】发布公告格式要求**：
 >
 > 1. 必须按类型分组（✨ 新功能 / 🐛 修复 / 🔧 改进）
-> 2. **必须在末尾包含 Full Changelog 链接**（从上次公开发布版本到最新版本）
-> 3. Full Changelog 链接前必须加 `---` 分隔线
+> 2. 如果某个分组没有实际内容，**直接忽略该分组**，不要输出占位文案
+> 3. **禁止**输出“本版本无新增功能”“无修复”“无改进”等空内容提示
+> 4. **必须在末尾包含 Full Changelog 链接**（从上次公开发布版本到最新版本）
+> 5. Full Changelog 链接前必须加 `---` 分隔线
 
 **标准格式**：
 
@@ -115,9 +117,9 @@ cat CHANGELOG.md
 CHANGELOG 原文：
 
 ```
-- **修复 ModelMapping 导致请求字段丢失** - 解决使用模型重定向时 Codex API 返回 403 的问题：
+- **修复 ModelMapping 导致请求字段丢失** - 解决使用模型重定向时 Claude API 返回 403 的问题：
   - 原因：`ClaudeRequest` 结构体缺少 `metadata` 字段，JSON 反序列化时该字段被丢弃
-  - 表现：配置 `modelMapping` 后请求被上游拒绝（如 `opus` → `Codex-opus-4-5-20251101`）
+  - 表现：配置 `modelMapping` 后请求被上游拒绝（如 `opus` → `claude-opus-4-5-20251101`）
   - 修复：在 `ClaudeRequest` 中添加 `Metadata map[string]interface{}` 字段
   - 涉及文件：`backend-go/internal/types/types.go`
 ```
@@ -147,17 +149,71 @@ gh release create <tag> \
   --latest
 ```
 
-### 6. 确认发布成功
+### 6. 验证 Release Assets 完整性
+
+发布后必须检查 assets 数量是否符合预期（当前项目预期 12 个文件：darwin/linux/windows × amd64/arm64 + 对应 sha256）。
 
 ```bash
-gh release view <tag> --json url,publishedAt
+# 检查 assets 数量
+gh release view <tag> --json assets --jq '.assets | length'
+
+# 列出所有 assets
+gh release view <tag> --json assets --jq '.assets[].name' | sort
 ```
 
-输出发布链接供用户确认。
+**预期 assets 列表**（12 个）：
+
+```
+ccx-darwin-amd64
+ccx-darwin-amd64.sha256
+ccx-darwin-arm64
+ccx-darwin-arm64.sha256
+ccx-linux-amd64
+ccx-linux-amd64.sha256
+ccx-linux-arm64
+ccx-linux-arm64.sha256
+ccx-windows-amd64.exe
+ccx-windows-amd64.exe.sha256
+ccx-windows-arm64.exe
+ccx-windows-arm64.exe.sha256
+```
+
+**如果 assets 不足**：
+
+多个 CI workflow 并行时，`softprops/action-gh-release` 可能因竞态条件将部分文件上传到一个 untagged draft release。检查并修复：
+
+```bash
+# 查找残留的 draft release（可能包含缺失的 assets）
+gh api repos/BenedictKing/ccx/releases --jq '.[] | select(.draft == true) | {id, tag_name, assets: [.assets[].name]}'
+
+# 如果找到包含缺失文件的 draft，下载后上传到正式 release
+gh release download <draft-tag-or-id> -D /tmp/missing-assets -p '*' -R BenedictKing/ccx
+gh release upload <tag> /tmp/missing-assets/<file1> /tmp/missing-assets/<file2> --clobber
+
+# 清理残留 draft
+gh api -X DELETE repos/BenedictKing/ccx/releases/<draft-id>
+```
+
+**重要**：下载大文件时如果网络不稳定，使用本地代理（询问用户代理端口）：
+
+```bash
+https_proxy=http://127.0.0.1:<port> http_proxy=http://127.0.0.1:<port> gh release download ...
+```
+
+### 7. 确认发布成功
+
+```bash
+gh release view <tag> --json url,publishedAt,assets --jq '{url: .url, publishedAt: .publishedAt, assetCount: (.assets | length)}'
+```
+
+输出发布链接和 assets 数量供用户确认。
 
 ## 输出格式
 
-> ⚠️ **【必须】严格按照以下格式输出，不可省略任何部分**
+> ⚠️ **【必须】严格遵循以下规则输出**
+>
+> - 版本、状态、链接、发布内容、Full Changelog 不可省略
+> - `✨ 新功能 / 🐛 修复 / 🔧 改进` 作为标准样板保留，但**实际输出时空分组可忽略**
 
 ```
 📦 Release 发布完成！

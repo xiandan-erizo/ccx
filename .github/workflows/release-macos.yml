@@ -55,6 +55,12 @@ jobs:
           CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -ldflags "-s -w -X main.Version=${{ github.ref_name }} -X main.BuildTime=$(date -u '+%Y-%m-%d_%H:%M:%S') -X main.GitCommit=${{ github.sha }}" -o ccx-darwin-amd64
         working-directory: ./backend-go
 
+      - name: Generate checksums
+        run: |
+          cd backend-go
+          shasum -a 256 ccx-darwin-arm64 | awk '{print $1}' > ccx-darwin-arm64.sha256
+          shasum -a 256 ccx-darwin-amd64 | awk '{print $1}' > ccx-darwin-amd64.sha256
+
       - name: Release
         uses: softprops/action-gh-release@v2.0.5
         if: startsWith(github.ref, 'refs/tags/')
@@ -62,6 +68,8 @@ jobs:
           files: |
             backend-go/ccx-darwin-arm64
             backend-go/ccx-darwin-amd64
+            backend-go/ccx-darwin-arm64.sha256
+            backend-go/ccx-darwin-amd64.sha256
           draft: true
           generate_release_notes: true
         env:

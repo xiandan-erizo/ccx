@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { VersionInfo } from '@/services/version'
+import type { UpdateStatusResponse } from '@/services/api'
 
 /**
  * 系统状态管理 Store
@@ -38,6 +39,11 @@ export const useSystemStore = defineStore('system', () => {
   // 移除计费头加载状态
   const stripBillingHeaderLoading = ref(false)
   const stripBillingHeaderLoadError = ref(false)
+
+  // OTA 更新状态
+  const updateStatus = ref<UpdateStatusResponse | null>(null)
+  const isUpdating = ref(false)
+  const updateDialogOpen = ref(false)
 
   // ===== 计算属性 =====
 
@@ -99,6 +105,18 @@ export const useSystemStore = defineStore('system', () => {
     stripBillingHeaderLoadError.value = error
   }
 
+  function setUpdateStatus(status: UpdateStatusResponse | null) {
+    updateStatus.value = status
+  }
+
+  function setIsUpdating(updating: boolean) {
+    isUpdating.value = updating
+  }
+
+  function setUpdateDialogOpen(open: boolean) {
+    updateDialogOpen.value = open
+  }
+
   /**
    * 重置系统状态
    */
@@ -129,6 +147,9 @@ export const useSystemStore = defineStore('system', () => {
     fuzzyModeLoadError,
     stripBillingHeaderLoading,
     stripBillingHeaderLoadError,
+    updateStatus,
+    isUpdating,
+    updateDialogOpen,
 
     // 计算属性
 
@@ -141,6 +162,9 @@ export const useSystemStore = defineStore('system', () => {
     setFuzzyModeLoadError,
     setStripBillingHeaderLoading,
     setStripBillingHeaderLoadError,
+    setUpdateStatus,
+    setIsUpdating,
+    setUpdateDialogOpen,
     resetSystemState,
   }
 })

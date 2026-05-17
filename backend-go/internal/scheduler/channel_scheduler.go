@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/BenedictKing/ccx/internal/config"
+	"github.com/BenedictKing/ccx/internal/conversation"
 	"github.com/BenedictKing/ccx/internal/metrics"
 	"github.com/BenedictKing/ccx/internal/session"
 	"github.com/BenedictKing/ccx/internal/transitions"
@@ -33,6 +34,8 @@ type ChannelScheduler struct {
 	geminiChannelLogStore    *metrics.ChannelLogStore // Gemini 渠道请求日志
 	chatChannelLogStore      *metrics.ChannelLogStore // Chat 渠道请求日志
 	imagesChannelLogStore    *metrics.ChannelLogStore // Images 渠道请求日志
+	conversationTracker      *conversation.ConversationTracker
+	overrideManager          *conversation.OverrideManager
 }
 
 // ChannelKind 标识调度器所处理的渠道类型
@@ -74,6 +77,22 @@ func NewChannelScheduler(
 		chatChannelLogStore:      metrics.NewChannelLogStore(),
 		imagesChannelLogStore:    metrics.NewChannelLogStore(),
 	}
+}
+
+// SetConversationComponents 设置对话追踪和覆盖管理组件
+func (s *ChannelScheduler) SetConversationComponents(tracker *conversation.ConversationTracker, overrideMgr *conversation.OverrideManager) {
+	s.conversationTracker = tracker
+	s.overrideManager = overrideMgr
+}
+
+// GetConversationTracker 获取对话追踪器
+func (s *ChannelScheduler) GetConversationTracker() *conversation.ConversationTracker {
+	return s.conversationTracker
+}
+
+// GetOverrideManager 获取覆盖管理器
+func (s *ChannelScheduler) GetOverrideManager() *conversation.OverrideManager {
+	return s.overrideManager
 }
 
 // getMetricsManager 根据类型获取对应的指标管理器
@@ -429,7 +448,33 @@ func (s *ChannelScheduler) SelectChannel(
 		activeChannels = filtered
 	}
 
-	// 0. 检查促销期渠道（最高优先级，绕过健康检查）
+	// 0. 检查手动序列覆盖
+	if userID != "" && s.overrideManager != nil {
+		if sequence, ok := s.overrideManager.GetOverrideForUser(string(kind), userID); ok {
+			prefix := kindSchedulerLogPrefix(kind)
+			for _, entry := range sequence {
+				if failedChannels[entry.ChannelIndex] {
+					continue
+				}
+				for _, ch := range activeChannels {
+					if ch.Index == entry.ChannelIndex && ch.Status == "active" {
+						upstream := s.getUpstreamByIndex(entry.ChannelIndex, kind)
+						if upstream != nil && s.channelIsHealthy(upstream, kind) {
+							log.Printf("[%s-Override] 手动覆盖选择渠道: [%d] %s (user: %s)", prefix, entry.ChannelIndex, entry.ChannelName, maskUserID(userID))
+							return &SelectionResult{
+								Upstream:     upstream,
+								ChannelIndex: entry.ChannelIndex,
+								Reason:       "manual_override",
+							}, nil
+						}
+					}
+				}
+			}
+			log.Printf("[%s-Override] 覆盖序列中无可用渠道，回退到默认调度 (user: %s)", prefix, maskUserID(userID))
+		}
+	}
+
+	// 1. 检查促销期渠道（手动覆盖之后，绕过健康检查）
 	promotedChannel := s.findPromotedChannel(activeChannels, kind)
 	if promotedChannel != nil && !failedChannels[promotedChannel.Index] {
 		// 促销渠道存在且未失败，直接使用（不检查健康状态，让用户设置的促销渠道有机会尝试）
@@ -791,6 +836,20 @@ func (s *ChannelScheduler) UpdateTraceAffinity(userID string, kind ChannelKind) 
 	}
 }
 
+// TrackConversation 追踪对话（请求成功后调用）
+func (s *ChannelScheduler) TrackConversation(kind ChannelKind, userID, model string, channelIndex int, channelName, sessionID, lastUserMessage string, userMessageCount int) {
+	if s.conversationTracker != nil && userID != "" {
+		s.conversationTracker.Track(string(kind), userID, model, channelIndex, channelName, sessionID, lastUserMessage, userMessageCount)
+	}
+}
+
+func (s *ChannelScheduler) UpdateConversationTitle(kind ChannelKind, userID, title string) bool {
+	if s.conversationTracker == nil || userID == "" || title == "" {
+		return false
+	}
+	return s.conversationTracker.UpdateTitle(string(kind), userID, title)
+}
+
 // GetMessagesMetricsManager 获取 Messages 渠道指标管理器
 func (s *ChannelScheduler) GetMessagesMetricsManager() *metrics.MetricsManager {
 	return s.messagesMetricsManager
@@ -989,6 +1048,18 @@ func (s *ChannelScheduler) GetActiveChannelCount(kind ChannelKind) int {
 // IsMultiChannelMode 判断是否为多渠道模式
 func (s *ChannelScheduler) IsMultiChannelMode(kind ChannelKind) bool {
 	return s.GetActiveChannelCount(kind) > 1
+}
+
+func (s *ChannelScheduler) GetConversationChannelsByKind(kind ChannelKind) []ChannelInfo {
+	return s.getActiveChannels(kind, "")
+}
+
+// MaskUserIDForLog 掩码 user_id 供跨包日志使用。
+func MaskUserIDForLog(userID string) string {
+	if userID == "" {
+		return ""
+	}
+	return maskUserID(userID)
 }
 
 // maskUserID 掩码 user_id（保护隐私）

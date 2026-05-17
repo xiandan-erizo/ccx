@@ -397,51 +397,74 @@ func GetChannelModels(cfgManager *config.ConfigManager) gin.HandlerFunc {
 
 		log.Printf("[Messages-Models] 请求模型列表: channel=%s, key=%s", channelName, utils.MaskAPIKey(apiKey))
 
-		// 5. 发起请求
-		url := buildModelsURL(baseURL)
+		// 5. 使用候选 URL 列表发起请求（messages 渠道自动尝试兼容路径）
+		candidateURLs := buildClaudeCompatibleModelsURLs(baseURL)
+
 		client := httpclient.GetManager().GetStandardClient(10*time.Second, insecureSkipVerify, proxyURL)
 		if req.BaseURL != "" && req.ProxyURL != "" {
 			client = httpclient.GetManager().NewStandardClient(10*time.Second, insecureSkipVerify, proxyURL)
 		}
 
-		httpReq, err := http.NewRequestWithContext(c.Request.Context(), "GET", url, nil)
-		if err != nil {
-			log.Printf("[Messages-Models] 创建请求失败: channel=%s, url=%s, error=%v", channelName, url, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to create request: %v", err)})
-			return
-		}
-		httpReq.Header.Set("Authorization", "Bearer "+apiKey)
-		httpReq.Header.Set("Content-Type", "application/json")
-		utils.ApplyCustomHeaders(httpReq.Header, req.CustomHeaders)
+		var lastStatusCode int
+		var lastBody []byte
+		for _, candidateURL := range candidateURLs {
+			httpReq, err := http.NewRequestWithContext(c.Request.Context(), "GET", candidateURL, nil)
+			if err != nil {
+				log.Printf("[Messages-Models] 创建请求失败: channel=%s, url=%s, error=%v", channelName, candidateURL, err)
+				continue
+			}
+			httpReq.Header.Set("Authorization", "Bearer "+apiKey)
+			httpReq.Header.Set("Content-Type", "application/json")
+			utils.ApplyCustomHeaders(httpReq.Header, req.CustomHeaders)
 
-		resp, err := client.Do(httpReq)
-		if err != nil {
-			log.Printf("[Messages-Models] 请求失败: channel=%s, key=%s, url=%s, error=%v",
-				channelName, utils.MaskAPIKey(apiKey), url, err)
-			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("Failed to fetch models: %v", err)})
-			return
+			resp, err := client.Do(httpReq)
+			if err != nil {
+				log.Printf("[Messages-Models] 请求失败: channel=%s, key=%s, url=%s, error=%v",
+					channelName, utils.MaskAPIKey(apiKey), candidateURL, err)
+				continue
+			}
+
+			body, err := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				log.Printf("[Messages-Models] 读取响应失败: channel=%s, error=%v", channelName, err)
+				continue
+			}
+
+			lastStatusCode = resp.StatusCode
+			lastBody = body
+
+			if resp.StatusCode == http.StatusOK {
+				log.Printf("[Messages-Models] 上游响应: channel=%s, key=%s, status=%d, url=%s",
+					channelName, utils.MaskAPIKey(apiKey), resp.StatusCode, candidateURL)
+				c.Data(resp.StatusCode, "application/json", body)
+				return
+			}
+
+			// 401/403 认证失败不继续尝试其他候选 URL
+			if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+				log.Printf("[Messages-Models] 上游认证失败: channel=%s, key=%s, status=%d, url=%s",
+					channelName, utils.MaskAPIKey(apiKey), resp.StatusCode, candidateURL)
+				break
+			}
+
+			log.Printf("[Messages-Models] 上游返回非 200: channel=%s, key=%s, status=%d, url=%s",
+				channelName, utils.MaskAPIKey(apiKey), resp.StatusCode, candidateURL)
 		}
 
-		body, err := io.ReadAll(resp.Body)
-		resp.Body.Close()
-		if err != nil {
-			log.Printf("[Messages-Models] 读取响应失败: channel=%s, error=%v", channelName, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": fmt.Sprintf("Failed to read response: %v", err)})
-			return
-		}
-
-		log.Printf("[Messages-Models] 上游响应: channel=%s, key=%s, status=%d, url=%s",
-			channelName, utils.MaskAPIKey(apiKey), resp.StatusCode, url)
-		// 包装上游 401 错误，避免前端误判为管理 API 认证失败
-		if resp.StatusCode == 401 {
+		// 所有候选 URL 均失败，返回最后一次上游响应
+		if lastStatusCode == http.StatusUnauthorized {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":      "上游 API Key 无效",
 				"statusCode": 401,
-				"details":    string(body),
+				"details":    string(lastBody),
 			})
 			return
 		}
-
-		c.Data(resp.StatusCode, "application/json", body)
+		if lastBody != nil {
+			c.Data(lastStatusCode, "application/json", lastBody)
+			return
+		}
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to fetch models from all candidate URLs"})
 	}
 }

@@ -79,14 +79,14 @@
               class="mobile-tab-selector text-body-2 font-weight-bold"
               append-icon="mdi-chevron-down"
             >
-              {{ translatedApiTabOptions.find(tab => tab.value === channelStore.activeTab)?.label }}
+              {{ route.path === '/conversations' ? t('app.tabs.conversations') : translatedApiTabOptions.find(tab => tab.value === channelStore.activeTab)?.label }}
             </v-btn>
           </template>
           <v-list density="compact" nav>
             <v-list-item
               v-for="tab in translatedApiTabOptions"
               :key="tab.value"
-              :active="channelStore.activeTab === tab.value"
+              :active="tab.value === 'conversations' ? route.path === '/conversations' : channelStore.activeTab === tab.value"
               :to="tab.route"
             >
               <v-list-item-title>{{ tab.label }}</v-list-item-title>
@@ -96,24 +96,28 @@
 
         <!-- 桌面端：平铺链接 -->
         <div v-else class="text-h6 font-weight-bold d-flex align-center">
-          <router-link to="/channels/messages" class="api-type-text" :class="{ active: channelStore.activeTab === 'messages' }">
+          <router-link to="/channels/messages" class="api-type-text" :class="{ active: channelStore.activeTab === 'messages' && route.path !== '/conversations' }">
             {{ t('app.tabs.messages') }}
           </router-link>
           <span class="api-type-text separator">/</span>
-          <router-link to="/channels/chat" class="api-type-text" :class="{ active: channelStore.activeTab === 'chat' }">
+          <router-link to="/channels/chat" class="api-type-text" :class="{ active: channelStore.activeTab === 'chat' && route.path !== '/conversations' }">
             {{ t('app.tabs.chat') }}
           </router-link>
           <span class="api-type-text separator">/</span>
-          <router-link to="/channels/images" class="api-type-text" :class="{ active: channelStore.activeTab === 'images' }">
+          <router-link to="/channels/images" class="api-type-text" :class="{ active: channelStore.activeTab === 'images' && route.path !== '/conversations' }">
             {{ t('app.tabs.images') }}
           </router-link>
           <span class="api-type-text separator">/</span>
-          <router-link to="/channels/responses" class="api-type-text" :class="{ active: channelStore.activeTab === 'responses' }">
+          <router-link to="/channels/responses" class="api-type-text" :class="{ active: channelStore.activeTab === 'responses' && route.path !== '/conversations' }">
             {{ t('app.tabs.responses') }}
           </router-link>
           <span class="api-type-text separator">/</span>
-          <router-link to="/channels/gemini" class="api-type-text" :class="{ active: channelStore.activeTab === 'gemini' }">
+          <router-link to="/channels/gemini" class="api-type-text" :class="{ active: channelStore.activeTab === 'gemini' && route.path !== '/conversations' }">
             {{ t('app.tabs.gemini') }}
+          </router-link>
+          <span class="api-type-text separator">/</span>
+          <router-link to="/conversations" class="api-type-text" :class="{ active: route.path === '/conversations' }">
+            {{ t('app.tabs.conversations') }}
           </router-link>
           <span class="brand-text d-none d-md-inline">API Proxy - CCX</span>
         </div>
@@ -207,7 +211,7 @@
     <v-main>
       <v-container fluid class="pa-4 pa-md-6">
         <!-- 全局统计顶部可折叠卡片（根据当前 Tab 显示对应统计） -->
-        <v-card v-if="isAuthenticated" class="mb-4 global-stats-panel">
+        <v-card v-if="isAuthenticated && route.path !== '/conversations'" class="mb-4 global-stats-panel">
           <div
             class="global-stats-header d-flex align-center justify-space-between px-4 py-2"
             style="cursor: pointer;"
@@ -230,7 +234,7 @@
         </v-card>
 
         <!-- 统计卡片 - 玻璃拟态风格 -->
-        <v-row class="mb-6 stat-cards-row">
+        <v-row v-if="route.path !== '/conversations'" class="mb-6 stat-cards-row">
           <v-col cols="6" sm="4">
             <div class="stat-card stat-card-info">
               <div class="stat-card-icon">
@@ -276,8 +280,9 @@
           </v-col>
         </v-row>
 
+
         <!-- 操作按钮区域 - 现代化设计 -->
-        <div class="action-bar mb-6">
+        <div v-if="route.path !== '/conversations'" class="action-bar mb-6">
           <div class="action-bar-left">
             <v-btn
               color="primary"
@@ -391,6 +396,9 @@
       @test-protocol="handleTestCapabilityProtocol"
     />
 
+    <!-- OTA 更新对话框 -->
+    <UpdateDialog v-model="systemStore.updateDialogOpen" />
+
     <!-- 添加API密钥对话框 -->
     <v-dialog v-model="dialogStore.showAddKeyModal" max-width="500">
       <v-card rounded="lg">
@@ -437,6 +445,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, watch, defineAsyncComponent } from 'vue'
+import { useRoute } from 'vue-router'
 import { useTheme } from 'vuetify'
 import { api, fetchHealth, ApiError, type Channel, type CapabilityTestJob, type CapabilityTestJobStartResponse, type CapabilityProtocolJobResult, type CapabilityModelJobResult, type CapabilitySnapshot } from './services/api'
 import { versionService } from './services/version'
@@ -449,9 +458,13 @@ import { useI18n } from './i18n'
 import type { SupportedLocale } from './i18n'
 import AddChannelModal from './components/AddChannelModal.vue'
 import CapabilityTestDialog from './components/CapabilityTestDialog.vue'
+import UpdateDialog from './components/UpdateDialog.vue'
 // 异步加载图表组件，减少首屏 JS 体积
 const GlobalStatsChart = defineAsyncComponent(() => import('./components/GlobalStatsChart.vue'))
 import { useAppTheme } from './composables/useTheme'
+
+// 路由
+const route = useRoute()
 
 // Vuetify主题
 const theme = useTheme()
@@ -496,6 +509,7 @@ const apiTabOptions = [
   { value: 'images', labelKey: 'app.tabs.images', route: '/channels/images' },
   { value: 'responses', labelKey: 'app.tabs.responses', route: '/channels/responses' },
   { value: 'gemini', labelKey: 'app.tabs.gemini', route: '/channels/gemini' },
+  { value: 'conversations', labelKey: 'app.tabs.conversations', route: '/conversations' },
 ] as const
 
 const translatedApiTabOptions = computed(() => {
@@ -1640,7 +1654,25 @@ const checkVersion = async () => {
 
   systemStore.setCheckingVersion(true)
   try {
-    // 先获取当前版本
+    const updateStatus = await api.checkUpdate()
+    systemStore.setUpdateStatus(updateStatus)
+    systemStore.setVersionInfo({
+      currentVersion: updateStatus.current_version,
+      latestVersion: updateStatus.latest_version || null,
+      isLatest: !updateStatus.has_update,
+      hasUpdate: updateStatus.has_update,
+      releaseUrl: updateStatus.release_url || null,
+      lastCheckTime: Date.now(),
+      status: updateStatus.has_update ? 'update-available' : 'latest',
+    })
+    systemStore.setCheckingVersion(false)
+    return
+  } catch (error) {
+    console.warn('Backend version check failed, falling back to GitHub:', error)
+  }
+
+  try {
+    // 后端接口不可用时降级为前端直连 GitHub
     const health = await fetchHealth()
     const currentVersion = health.version?.version || ''
 
@@ -1648,7 +1680,6 @@ const checkVersion = async () => {
       versionService.setCurrentVersion(currentVersion)
       systemStore.setCurrentVersion(currentVersion)
 
-      // 检查 GitHub 最新版本
       const result = await versionService.checkForUpdates()
       systemStore.setVersionInfo(result)
     } else {
@@ -1670,12 +1701,7 @@ const checkVersion = async () => {
 
 // 版本点击处理
 const handleVersionClick = () => {
-  if (
-    (systemStore.versionInfo.status === 'update-available' || systemStore.versionInfo.status === 'latest') &&
-    systemStore.versionInfo.releaseUrl
-  ) {
-    window.open(systemStore.versionInfo.releaseUrl, '_blank', 'noopener,noreferrer')
-  }
+  systemStore.setUpdateDialogOpen(true)
 }
 
 // 监听系统主题变化（setup 阶段注册，onUnmounted 清理，避免泄漏）

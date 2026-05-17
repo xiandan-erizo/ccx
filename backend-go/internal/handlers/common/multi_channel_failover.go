@@ -19,6 +19,7 @@ type MultiChannelAttemptResult struct {
 	FailoverError     *FailoverError
 	Usage             *types.Usage
 	LastError         error
+	ResponseText      string
 }
 
 // TrySelectedChannelFunc 尝试一次选中的渠道，返回该渠道的尝试结果。
@@ -87,12 +88,26 @@ func HandleMultiChannelFailover(
 
 		result := trySelectedChannel(selection)
 		if result.Handled {
+			lastUserMsg, _ := c.Get("lastUserMessage")
+			lastUserMsgStr, _ := lastUserMsg.(string)
+			userMsgCount, _ := c.Get("userMessageCount")
+			userMsgCountInt, _ := userMsgCount.(int)
+
+			// 只有真正成功的普通请求才设置 Trace 亲和并追踪对话；title 请求没有用户消息，不污染卡片状态。
+			if result.SuccessKey != "" && (lastUserMsgStr != "" || userMsgCountInt > 0) {
+				channelScheduler.SetTraceAffinity(userID, channelIndex, kind)
+				channelName := ""
+				if upstream != nil {
+					channelName = upstream.Name
+				}
+				channelScheduler.TrackConversation(kind, userID, model, channelIndex, channelName, "", lastUserMsgStr, userMsgCountInt)
+				if envCfg.ShouldLog("debug") {
+					log.Printf("[%s-Conversation-Debug] 已追踪对话: kind=%s, user=%s, model=%s, channel=%d, userMessages=%d, hasFallbackTitle=%t",
+						apiType, kind, scheduler.MaskUserIDForLog(userID), model, channelIndex, userMsgCountInt, lastUserMsgStr != "")
+				}
+			}
 			if onHandled != nil {
 				onHandled(selection, result)
-			}
-			// 只有真正成功的请求才设置 Trace 亲和（客户端取消时 SuccessKey 为空）
-			if result.SuccessKey != "" {
-				channelScheduler.SetTraceAffinity(userID, channelIndex, kind)
 			}
 			return
 		}

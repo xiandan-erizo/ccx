@@ -37,6 +37,7 @@ import { VTooltip } from 'vuetify/components/VTooltip'
 
 // 数据展示
 import { VChip } from 'vuetify/components/VChip'
+import { VChipGroup } from 'vuetify/components/VChipGroup'
 import { VAvatar } from 'vuetify/components/VAvatar'
 import { VIcon } from 'vuetify/components/VIcon'
 import { VDivider } from 'vuetify/components/VDivider'
@@ -99,6 +100,7 @@ import {
   mdiClose,
   mdiArrowUpBold,
   mdiArrowDownBold,
+  mdiArrowDown,
   mdiCheck,
   mdiCheckBold,
   mdiContentCopy,
@@ -180,6 +182,9 @@ import {
   mdiKeyAlert,
   mdiCashRemove,
   mdiAccountSwitch,
+  mdiChatOutline,
+  mdiDragHorizontalVariant,
+  mdiUpdate,
 } from '@mdi/js'
 
 // 图标名称到 SVG path 的映射 (使用 kebab-case)
@@ -249,6 +254,7 @@ const iconMap: Record<string, string> = {
   'content-copy': mdiContentCopy,
   'arrow-up-bold': mdiArrowUpBold,
   'arrow-down-bold': mdiArrowDownBold,
+  'arrow-down': mdiArrowDown,
   'arrow-right': mdiArrowRight,
   'arrow-right-thin': mdiArrowRightThin,
   'arrow-right-bold': mdiArrowRightBold,
@@ -372,6 +378,9 @@ const iconMap: Record<string, string> = {
 
   // 渠道配置
   'account-switch': mdiAccountSwitch,
+  'chat-outline': mdiChatOutline,
+  'drag-horizontal-variant': mdiDragHorizontalVariant,
+  'update': mdiUpdate,
 }
 
 // 自定义 SVG iconset - 处理 mdi-xxx 字符串格式
@@ -505,6 +514,7 @@ export default createVuetify({
     VTooltip,
     // 数据展示
     VChip,
+    VChipGroup,
     VAvatar,
     VIcon,
     VDivider,

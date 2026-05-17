@@ -50,7 +50,7 @@ func shouldRetryWithNextKeyFuzzy(statusCode int, bodyBytes []byte, apiType strin
 	// 内容审核类错误（sensitive_words_detected 等）任何状态码都不应 failover
 	// 换渠道/换 Key 不会改变请求内容本身
 	if len(bodyBytes) > 0 && isContentModerationError(bodyBytes) {
-		log.Printf("[%s-Failover-Fuzzy] 检测到内容审核错误 (statusCode=%d)，不进行 failover", apiType, statusCode)
+		log.Printf("[%s-Failover-Fuzzy] 检测到内容审核错误 (statusCode=%d)，不进行 failover, body=%s", apiType, statusCode, truncateErrorSummary(string(bodyBytes)))
 		return false, false
 	}
 
@@ -58,7 +58,7 @@ func shouldRetryWithNextKeyFuzzy(statusCode int, bodyBytes []byte, apiType strin
 	// 仅对 4xx 客户端错误生效，5xx 服务端错误应始终允许 failover
 	if statusCode >= 400 && statusCode < 500 && len(bodyBytes) > 0 {
 		if isNonRetryableError(bodyBytes, apiType) {
-			log.Printf("[%s-Failover-Fuzzy] 检测到不可重试错误 (statusCode=%d)，不进行 failover", apiType, statusCode)
+			log.Printf("[%s-Failover-Fuzzy] 检测到不可重试错误 (statusCode=%d)，不进行 failover, body=%s", apiType, statusCode, truncateErrorSummary(string(bodyBytes)))
 			return false, false
 		}
 	}
@@ -88,14 +88,14 @@ func shouldRetryWithNextKeyNormal(statusCode int, bodyBytes []byte, apiType stri
 	// 内容审核类错误（sensitive_words_detected 等）任何状态码都不应 failover
 	// 换渠道/换 Key 不会改变请求内容本身
 	if len(bodyBytes) > 0 && isContentModerationError(bodyBytes) {
-		log.Printf("[%s-Failover-Debug] 检测到内容审核错误 (statusCode=%d)，不进行 failover", apiType, statusCode)
+		log.Printf("[%s-Failover-Debug] 检测到内容审核错误 (statusCode=%d)，不进行 failover, body=%s", apiType, statusCode, truncateErrorSummary(string(bodyBytes)))
 		return false, false
 	}
 
 	// 检查是否为参数校验类不可重试错误（invalid_request 等）
 	// 仅对 4xx 客户端错误生效，5xx 服务端错误应始终允许 failover
 	if statusCode >= 400 && statusCode < 500 && len(bodyBytes) > 0 && isNonRetryableError(bodyBytes, apiType) {
-		log.Printf("[%s-Failover-Debug] 检测到不可重试错误 (statusCode=%d)，不进行 failover", apiType, statusCode)
+		log.Printf("[%s-Failover-Debug] 检测到不可重试错误 (statusCode=%d)，不进行 failover, body=%s", apiType, statusCode, truncateErrorSummary(string(bodyBytes)))
 		return false, false
 	}
 

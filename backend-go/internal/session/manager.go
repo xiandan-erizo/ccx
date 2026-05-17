@@ -271,6 +271,46 @@ func (sm *SessionManager) cleanup() {
 	}
 }
 
+// GetSessionByResponseID 通过 responseID 只读查找 session（不创建新 session）
+func (sm *SessionManager) GetSessionByResponseID(responseID string) (*Session, error) {
+	sm.mu.RLock()
+	defer sm.mu.RUnlock()
+
+	sessionID, ok := sm.responseMapping[responseID]
+	if !ok {
+		return nil, fmt.Errorf("未找到 responseID 对应的会话: %s", responseID)
+	}
+
+	session, exists := sm.sessions[sessionID]
+	if !exists {
+		return nil, fmt.Errorf("会话已过期: %s", sessionID)
+	}
+
+	return cloneSession(session)
+}
+
+// CreateCompactedSession 创建一个压缩后的 session 并记录 responseID 映射
+func (sm *SessionManager) CreateCompactedSession(responseID string, messages []types.ResponsesItem, totalTokens int) string {
+	sm.mu.Lock()
+	defer sm.mu.Unlock()
+
+	sessionID := generateID("sess")
+	session := &Session{
+		ID:             sessionID,
+		Messages:       messages,
+		LastResponseID: responseID,
+		CreatedAt:      time.Now(),
+		LastAccessAt:   time.Now(),
+		TotalTokens:    totalTokens,
+	}
+
+	sm.sessions[sessionID] = session
+	sm.responseMapping[responseID] = sessionID
+	log.Printf("[Session-Compact] 创建压缩会话: %s, responseID: %s", sessionID, responseID)
+
+	return sessionID
+}
+
 // GetStats 获取统计信息
 func (sm *SessionManager) GetStats() map[string]interface{} {
 	sm.mu.RLock()
